@@ -1,13 +1,15 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
   Image,
   Modal,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from "react-native";
 
@@ -130,49 +132,81 @@ export function VelgFelt({
   tomtekst?: string;
 }) {
   const [apen, setApen] = useState(false);
+  const [anker, setAnker] = useState<{ x: number; y: number; width: number; height: number } | null>(
+    null,
+  );
+  const knappRef = useRef<View>(null);
+  const { height: skjermHoyde } = useWindowDimensions();
   const valgtAlternativ = alternativer.find((a) => a.verdi === valgt);
+
+  function apne() {
+    // Mål feltet så nedtrekket kan legges rett under med nøyaktig samme bredde.
+    knappRef.current?.measureInWindow((x, y, width, height) => {
+      setAnker({ x, y, width, height });
+      setApen(true);
+    });
+  }
+
+  // Legg lista under feltet, eller over hvis det er klart mer plass der.
+  const plassUnder = anker ? skjermHoyde - (anker.y + anker.height) - 12 : 0;
+  const plassOver = anker ? anker.y - 12 : 0;
+  const visOver = plassOver > plassUnder && plassOver > 220;
+  const maksHoyde = Math.max(140, Math.min(340, visOver ? plassOver : plassUnder));
 
   return (
     <View style={stiler.felt}>
       <Text style={stiler.feltLabel}>{label}</Text>
-      <Pressable style={stiler.valgKnapp} onPress={() => setApen(true)}>
+      <Pressable ref={knappRef} style={stiler.valgKnapp} onPress={apne}>
         <Text style={valgtAlternativ ? stiler.valgTekst : stiler.valgTekstTom}>
           {valgtAlternativ ? valgtAlternativ.label : tomtekst}
         </Text>
       </Pressable>
       <Modal visible={apen} transparent animationType="fade" onRequestClose={() => setApen(false)}>
-        <Pressable style={stiler.modalBakgrunn} onPress={() => setApen(false)}>
-          <View style={stiler.modalInnhold}>
-            <Text style={stiler.modalTittel}>{label}</Text>
-            {alternativer.length === 0 ? (
-              <Text style={stiler.modalTomtekst}>Ingen alternativer ennå</Text>
-            ) : (
-              <FlatList
-                data={alternativer}
-                keyExtractor={(item) => item.verdi}
-                style={stiler.modalListe}
-                renderItem={({ item }) => (
-                  <Pressable
-                    style={[stiler.modalRad, stiler.modalRadMedBilde]}
-                    onPress={() => {
-                      onVelg(item.verdi);
-                      setApen(false);
-                    }}
-                  >
-                    {item.bilde !== undefined && (
-                      <Miniatyr url={item.bilde} bokstav={item.label} storrelse={32} />
-                    )}
-                    <View style={stiler.modalRadTekst}>
-                      <Text style={stiler.modalRadTittel}>{item.label}</Text>
-                      {item.undertekst && (
-                        <Text style={stiler.modalRadUndertekst}>{item.undertekst}</Text>
+        <Pressable style={stiler.nedtrekkBakgrunn} onPress={() => setApen(false)}>
+          {anker && (
+            <View
+              style={[
+                stiler.nedtrekkListe,
+                {
+                  left: anker.x,
+                  width: anker.width,
+                  maxHeight: maksHoyde,
+                  ...(visOver
+                    ? { bottom: skjermHoyde - anker.y + 4 }
+                    : { top: anker.y + anker.height + 4 }),
+                },
+              ]}
+            >
+              {alternativer.length === 0 ? (
+                <Text style={stiler.nedtrekkTomtekst}>Ingen alternativer ennå</Text>
+              ) : (
+                <FlatList
+                  data={alternativer}
+                  keyExtractor={(item) => item.verdi}
+                  keyboardShouldPersistTaps="handled"
+                  renderItem={({ item }) => (
+                    <Pressable
+                      style={[stiler.modalRad, stiler.modalRadMedBilde]}
+                      onPress={() => {
+                        onVelg(item.verdi);
+                        setApen(false);
+                      }}
+                    >
+                      {item.bilde !== undefined && (
+                        <Miniatyr url={item.bilde} bokstav={item.label} storrelse={32} />
                       )}
-                    </View>
-                  </Pressable>
-                )}
-              />
-            )}
-          </View>
+                      <View style={stiler.modalRadTekst}>
+                        <Text style={stiler.modalRadTittel}>{item.label}</Text>
+                        {item.undertekst && (
+                          <Text style={stiler.modalRadUndertekst}>{item.undertekst}</Text>
+                        )}
+                      </View>
+                    </Pressable>
+                  )}
+                />
+              )}
+            </View>
+          )}
         </Pressable>
       </Modal>
     </View>
@@ -312,6 +346,26 @@ const stiler = StyleSheet.create({
     borderRadius: 12,
     padding: 16,
     maxHeight: "70%",
+  },
+  nedtrekkBakgrunn: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.12)",
+  },
+  nedtrekkListe: {
+    position: "absolute",
+    backgroundColor: "#fff",
+    borderWidth: 1,
+    borderColor: farger.kant,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    overflow: "hidden",
+    ...(Platform.OS === "web"
+      ? { boxShadow: "0 8px 24px rgba(0,0,0,0.16)" as never }
+      : { elevation: 8 }),
+  },
+  nedtrekkTomtekst: {
+    color: "#888",
+    paddingVertical: 12,
   },
   modalTittel: {
     fontSize: 16,
