@@ -262,7 +262,7 @@ export function VarerScreen() {
       setVariantBildeurl(url);
     } catch (err) {
       setVariantFeil(
-        err instanceof ApiFeil ? err.message : "Kunne ikke laste opp bildet. Prøv igjen.",
+        err instanceof Error ? `Bildet feilet: ${err.message}` : "Kunne ikke laste opp bildet. Prøv igjen.",
       );
     } finally {
       setVariantBildeLaster(false);
@@ -496,8 +496,8 @@ function VareKameraModal({
     let tatt: KomprimertBilde | null;
     try {
       tatt = await taBilde();
-    } catch {
-      setFeil("Kunne ikke behandle bildet.");
+    } catch (err) {
+      setFeil(err instanceof Error ? `Kunne ikke behandle bildet: ${err.message}` : "Kunne ikke behandle bildet.");
       return;
     }
     if (!tatt) return;
@@ -621,7 +621,7 @@ function RedigerVariantModal({
       const { url } = await lastOppBilde(bilde.base64);
       setBildeurl(url);
     } catch (err) {
-      setFeil(err instanceof ApiFeil ? err.message : "Kunne ikke laste opp bildet. Prøv igjen.");
+      setFeil(err instanceof Error ? `Bildet feilet: ${err.message}` : "Kunne ikke laste opp bildet. Prøv igjen.");
     } finally {
       setBildeLaster(false);
     }

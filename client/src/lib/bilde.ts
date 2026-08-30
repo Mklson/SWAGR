@@ -3,7 +3,7 @@
 // opplastingstid og (for gjenkjenning) tokens mot Claude.
 import { Alert } from "react-native";
 import * as ImagePicker from "expo-image-picker";
-import { ImageManipulator, SaveFormat } from "expo-image-manipulator";
+import { ImageManipulator, SaveFormat, manipulateAsync } from "expo-image-manipulator";
 
 const MAKS_BREDDE = 1280;
 const KVALITET = 0.7;
@@ -19,18 +19,37 @@ function utenPrefiks(b64: string): string {
   return b64.replace(/^data:[^;]+;base64,/, "");
 }
 
-/** Komprimerer et bilde fra en lokal URI til ~1280px JPEG. */
-export async function komprimerBilde(uri: string): Promise<KomprimertBilde> {
-  const ref = await ImageManipulator.manipulate(uri)
-    .resize({ width: MAKS_BREDDE, height: null })
-    .renderAsync();
+// Ny kontekst-API (SDK 54+). Kan feile på enkelte web-oppsett.
+async function komprimerNy(uri: string): Promise<KomprimertBilde> {
+  const ref = await ImageManipulator.manipulate(uri).resize({ width: MAKS_BREDDE }).renderAsync();
   const lagret = await ref.saveAsync({ format: SaveFormat.JPEG, compress: KVALITET, base64: true });
   return { base64: utenPrefiks(lagret.base64 ?? ""), uri: lagret.uri };
 }
 
+// Eldre API - «deprecated but still functional», bredest plattformstøtte.
+async function komprimerGammel(uri: string): Promise<KomprimertBilde> {
+  const res = await manipulateAsync(uri, [{ resize: { width: MAKS_BREDDE } }], {
+    format: SaveFormat.JPEG,
+    compress: KVALITET,
+    base64: true,
+  });
+  return { base64: utenPrefiks(res.base64 ?? ""), uri: res.uri };
+}
+
+/** Komprimerer et bilde fra en lokal URI til ~1280px JPEG. */
+export async function komprimerBilde(uri: string): Promise<KomprimertBilde> {
+  try {
+    return await komprimerNy(uri);
+  } catch (err) {
+    console.warn("[bilde] ny manipulator-API feilet, faller tilbake til manipulateAsync", err);
+    return komprimerGammel(uri);
+  }
+}
+
 /**
  * Åpner kamera og returnerer et komprimert bilde, eller null hvis brukeren
- * avbrøt eller nektet kamera-tilgang.
+ * avbrøt eller nektet kamera-tilgang. Feiler komprimeringen helt, brukes
+ * det rå bildet fra kameraet som siste utvei.
  */
 export async function taBilde(): Promise<KomprimertBilde | null> {
   const tillatelse = await ImagePicker.requestCameraPermissionsAsync();
@@ -41,7 +60,19 @@ export async function taBilde(): Promise<KomprimertBilde | null> {
     );
     return null;
   }
-  const valg = await ImagePicker.launchCameraAsync({ mediaTypes: ["images"], quality: 0.8 });
+  const valg = await ImagePicker.launchCameraAsync({
+    mediaTypes: ["images"],
+    quality: 0.8,
+    base64: true,
+  });
   if (valg.canceled || !valg.assets[0]?.uri) return null;
-  return komprimerBilde(valg.assets[0].uri);
+  const asset = valg.assets[0];
+
+  try {
+    return await komprimerBilde(asset.uri);
+  } catch (err) {
+    console.warn("[bilde] komprimering feilet, bruker rått kamerabilde", err);
+    if (asset.base64) return { base64: utenPrefiks(asset.base64), uri: asset.uri };
+    throw err;
+  }
 }
