@@ -1,0 +1,24 @@
+# Avhengigheter
+node_modules/
+
+# Bygg-output
+dist/
+web-build/
+*.tsbuildinfo
+
+# Miljøvariabler (aldri sjekk inn hemmeligheter - kun *.env.example)
+.env
+.env.*
+!.env.example
+
+# Expo / React Native
+.expo/
+.expo-shared/
+
+# Logger og OS-filer
+*.log
+.DS_Store
+Thumbs.db
+
+# Testdekning
+coverage/

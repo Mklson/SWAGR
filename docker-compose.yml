@@ -1,0 +1,27 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: artkl
+      POSTGRES_PASSWORD: artkl
+      POSTGRES_DB: artkl
+    ports:
+      - "5432:5432"
+    volumes:
+      - artkl_pgdata:/var/lib/postgresql/data
+
+  postgres_test:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: artkl
+      POSTGRES_PASSWORD: artkl
+      POSTGRES_DB: artkl_test
+    ports:
+      - "5433:5432"
+    tmpfs:
+      - /var/lib/postgresql/data
+
+volumes:
+  artkl_pgdata:

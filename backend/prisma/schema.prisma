@@ -1,0 +1,167 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum ReservasjonStatus {
+  aktiv
+  kansellert
+  fullfort
+}
+
+enum BevegelseType {
+  inn
+  ut
+  svinn
+  retur
+  internbruk
+}
+
+enum KontekstType {
+  kunde
+  prosjekt
+  internbruk
+  svinn
+  retur
+  innkjop
+}
+
+model Leverandor {
+  id   String @id @default(uuid())
+  navn String
+
+  varer Vare[]
+
+  @@map("leverandorer")
+}
+
+model Vare {
+  id           String @id @default(uuid())
+  navn         String
+  kategori     String
+  leverandorId String @map("leverandor_id")
+
+  leverandor Leverandor @relation(fields: [leverandorId], references: [id])
+  varianter  Variant[]
+
+  @@map("varer")
+}
+
+// Egen tabell (ikke fritekst) slik at et merke kan ha én logo og ikke splittes
+// opp av skrivevarianter ("Acme Events" vs "acme events").
+model Merke {
+  id      String  @id @default(uuid())
+  navn    String  @unique
+  logoUrl String? @map("logo_url")
+
+  varianter Variant[]
+
+  @@map("merker")
+}
+
+model Variant {
+  id          String @id @default(uuid())
+  vareId      String @map("vare_id")
+  attributter Json   @default("{}")
+  sku         String @unique
+  bildeurl    String?
+  merkeId     String? @map("merke_id")
+  // Pris per enhet i øre (heltall) - unngår flyttall-avrundingsfeil på beløp.
+  // Nullbar: eksisterende varianter mangler pris til de er satt manuelt.
+  verdiOre    Int?    @map("verdi_ore")
+
+  vare          Vare          @relation(fields: [vareId], references: [id])
+  merke         Merke?        @relation(fields: [merkeId], references: [id])
+  bevegelser    Bevegelse[]
+  reservasjoner Reservasjon[]
+
+  @@index([vareId])
+  @@index([merkeId])
+  @@map("varianter")
+}
+
+model Lokasjon {
+  id   String @id @default(uuid())
+  navn String
+  type String
+
+  bevegelser    Bevegelse[]
+  reservasjoner Reservasjon[]
+
+  @@map("lokasjoner")
+}
+
+model Kontekst {
+  id        String       @id @default(uuid())
+  type      KontekstType
+  navn      String
+  referanse String?
+
+  bevegelser    Bevegelse[]
+  reservasjoner Reservasjon[]
+
+  @@map("kontekster")
+}
+
+model Bruker {
+  id    String @id @default(uuid())
+  navn  String
+  rolle String
+
+  bevegelser    Bevegelse[]
+  reservasjoner Reservasjon[]
+
+  @@map("brukere")
+}
+
+model Bevegelse {
+  id         String        @id @default(uuid())
+  variantId  String        @map("variant_id")
+  lokasjonId String        @map("lokasjon_id")
+  kontekstId String        @map("kontekst_id")
+  brukerId   String        @map("bruker_id")
+  type       BevegelseType
+  antall     Int
+  // Kopi av Variant.verdiOre på registreringstidspunktet, ikke en referanse -
+  // en senere prisendring skal ikke endre hva historiske rapporter viser.
+  // Null for bevegelser registrert før verdi-feltet fantes, eller der
+  // varianten manglet pris på registreringstidspunktet.
+  verdiOre   Int?          @map("verdi_ore")
+  tidspunkt  DateTime      @default(now())
+
+  variant  Variant  @relation(fields: [variantId], references: [id])
+  lokasjon Lokasjon @relation(fields: [lokasjonId], references: [id])
+  kontekst Kontekst @relation(fields: [kontekstId], references: [id])
+  bruker   Bruker   @relation(fields: [brukerId], references: [id])
+
+  @@index([variantId, lokasjonId, tidspunkt])
+  @@map("bevegelser")
+}
+
+// Blokkerer beholdning for annen bruk uten at varen fysisk har flyttet seg.
+// Status "aktiv" teller mot tilgjengelig beholdning fra opprettelse til den
+// avsluttes manuelt (kansellert/fullfort) - tilDato er kun informativ, ikke
+// en automatisk utløpsdato (krever en bakgrunnsjobb vi ikke har ennå).
+model Reservasjon {
+  id         String            @id @default(uuid())
+  variantId  String            @map("variant_id")
+  lokasjonId String            @map("lokasjon_id")
+  kontekstId String            @map("kontekst_id")
+  brukerId   String            @map("bruker_id")
+  antall     Int
+  status     ReservasjonStatus @default(aktiv)
+  tilDato    DateTime?         @map("til_dato")
+  opprettet  DateTime          @default(now())
+
+  variant  Variant  @relation(fields: [variantId], references: [id])
+  lokasjon Lokasjon @relation(fields: [lokasjonId], references: [id])
+  kontekst Kontekst @relation(fields: [kontekstId], references: [id])
+  bruker   Bruker   @relation(fields: [brukerId], references: [id])
+
+  @@index([variantId, lokasjonId, status])
+  @@map("reservasjoner")
+}
