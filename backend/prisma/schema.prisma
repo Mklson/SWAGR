@@ -3,8 +3,11 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  // Direkte tilkobling (ikke via pooler) - kun brukt av prisma migrate/db.
+  // Lokalt og i test settes den lik DATABASE_URL.
+  directUrl = env("DIRECT_URL")
 }
 
 enum ReservasjonStatus {
@@ -112,10 +115,28 @@ model Bruker {
   navn  String
   rolle String
 
+  // Innlogging. Nullbare fordi seed/referanse-brukere (registrert for auth
+  // fantes) ikke har paalogging - kun brukere med bade epost og passordHash
+  // kan logge inn.
+  epost       String? @unique
+  passordHash String? @map("passord_hash")
+
   bevegelser    Bevegelse[]
   reservasjoner Reservasjon[]
 
   @@map("brukere")
+}
+
+// Tillatsliste for selvregistrering: en e-post maa vaere invitert (av en
+// admin) for /api/auth/registrer godtar den. rolle arves til den nye brukeren.
+model InvitertEpost {
+  id        String   @id @default(uuid())
+  epost     String   @unique
+  rolle     String   @default("ansatt")
+  brukt     Boolean  @default(false)
+  opprettet DateTime @default(now())
+
+  @@map("inviterte_eposter")
 }
 
 model Bevegelse {

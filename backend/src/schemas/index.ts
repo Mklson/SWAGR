@@ -159,3 +159,28 @@ export const variantGjenkjennSchema = z.object({
   fil: z.string().min(1),
   mediaType: bildeMediaTypeSchema,
 });
+
+export const registrerSchema = z.object({
+  epost: z.string().email(),
+  passord: z.string().min(8),
+  navn: z.string().min(1),
+});
+
+export const loggInnSchema = z.object({
+  epost: z.string().email(),
+  passord: z.string().min(1),
+});
+
+export const invitertCreateSchema = z.object({
+  epost: z.string().email(),
+  rolle: z.string().min(1).optional(),
+});
+
+export const invitertIdParamsSchema = z.object({
+  id: z.string().uuid(),
+});
+
+export const bildeOpplastingSchema = z.object({
+  fil: z.string().min(1),
+  mediaType: bildeMediaTypeSchema,
+});

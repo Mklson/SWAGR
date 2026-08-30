@@ -9,6 +9,7 @@ export async function resetDb() {
   await testPrisma.merke.deleteMany();
   await testPrisma.vare.deleteMany();
   await testPrisma.kontekst.deleteMany();
+  await testPrisma.invitertEpost.deleteMany();
   await testPrisma.bruker.deleteMany();
   await testPrisma.lokasjon.deleteMany();
   await testPrisma.leverandor.deleteMany();

@@ -7,7 +7,7 @@ describe("varianter/gjenkjenn", () => {
   let app: FastifyInstance;
 
   beforeAll(async () => {
-    app = await buildServer();
+    app = await buildServer({ krevAuth: false });
     await app.ready();
   });
 

@@ -10,7 +10,7 @@ const TEST_DATABASE_URL =
 export default async function globalSetup() {
   execSync("npx prisma migrate deploy", {
     cwd: backendDir,
-    env: { ...process.env, DATABASE_URL: TEST_DATABASE_URL },
+    env: { ...process.env, DATABASE_URL: TEST_DATABASE_URL, DIRECT_URL: TEST_DATABASE_URL },
     stdio: "inherit",
   });
 }
