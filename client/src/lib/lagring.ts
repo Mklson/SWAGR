@@ -21,3 +21,12 @@ export function lagreVerdi(nokkel: string, verdi: string): void {
     // ignorer - kun en bekvemmelighet
   }
 }
+
+export function fjernLagretVerdi(nokkel: string): void {
+  try {
+    if (typeof localStorage === "undefined") return;
+    localStorage.removeItem(nokkel);
+  } catch {
+    // ignorer
+  }
+}

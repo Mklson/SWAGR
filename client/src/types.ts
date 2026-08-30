@@ -61,6 +61,7 @@ export interface Bruker {
   id: string;
   navn: string;
   rolle: string;
+  epost?: string | null;
 }
 
 export type BevegelseType = "inn" | "ut" | "svinn" | "retur" | "internbruk";

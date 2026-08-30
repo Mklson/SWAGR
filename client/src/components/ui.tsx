@@ -64,12 +64,18 @@ export function TekstFelt({
   onChangeText,
   placeholder,
   keyboardType,
+  secureTextEntry,
+  autoCapitalize,
+  autoComplete,
 }: {
   label: string;
   value: string;
   onChangeText: (v: string) => void;
   placeholder?: string;
-  keyboardType?: "default" | "numeric";
+  keyboardType?: "default" | "numeric" | "email-address";
+  secureTextEntry?: boolean;
+  autoCapitalize?: "none" | "sentences" | "words" | "characters";
+  autoComplete?: "email" | "password" | "name" | "off";
 }) {
   return (
     <View style={stiler.felt}>
@@ -80,6 +86,9 @@ export function TekstFelt({
         onChangeText={onChangeText}
         placeholder={placeholder}
         keyboardType={keyboardType}
+        secureTextEntry={secureTextEntry}
+        autoCapitalize={autoCapitalize}
+        autoComplete={autoComplete}
       />
     </View>
   );

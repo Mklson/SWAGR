@@ -1,4 +1,5 @@
 import { API_BASE_URL } from "./config";
+import { hentToken, loggUt } from "./lib/auth";
 import type {
   BeholdningRad,
   Bevegelse,
@@ -34,13 +35,23 @@ async function forespørsel<T>(path: string, init?: RequestInit): Promise<T> {
   // body (FST_ERR_CTP_EMPTY_JSON_BODY) - kun sett headeren når det faktisk
   // sendes en body (kanseller/fullfor har ingen).
   const harBody = init?.body !== undefined;
+  const token = hentToken();
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...init,
-    headers: { ...(harBody ? { "Content-Type": "application/json" } : {}), ...init?.headers },
+    headers: {
+      ...(harBody ? { "Content-Type": "application/json" } : {}),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...init?.headers,
+    },
   });
   const body = await response.json().catch(() => null);
   if (!response.ok) {
-    throw new ApiFeil(response.status, body?.error ?? "Ukjent feil fra serveren");
+    // Utløpt/ugyldig token mens vi var innlogget: logg ut sa appen viser
+    // innloggingsskjermen igjen. (Ikke ved selve innloggingskallet.)
+    if (response.status === 401 && token) loggUt();
+    const melding =
+      typeof body?.error === "string" ? body.error : "Ukjent feil fra serveren";
+    throw new ApiFeil(response.status, melding);
   }
   return body as T;
 }
@@ -72,6 +83,27 @@ export function gjenkjennVariant(
 ): Promise<VariantGjenkjenningResultat> {
   return create("/api/varianter/gjenkjenn", { fil: base64Bilde, mediaType });
 }
+
+// --- Auth ---
+
+export interface InnloggingSvar {
+  token: string;
+  bruker: Bruker;
+}
+
+export const loggInn = (epost: string, passord: string) =>
+  forespørsel<InnloggingSvar>("/api/auth/logg-inn", {
+    method: "POST",
+    body: JSON.stringify({ epost, passord }),
+  });
+
+export const registrer = (epost: string, passord: string, navn: string) =>
+  forespørsel<InnloggingSvar>("/api/auth/registrer", {
+    method: "POST",
+    body: JSON.stringify({ epost, passord, navn }),
+  });
+
+export const hentMeg = () => forespørsel<Bruker>("/api/auth/meg");
 
 export const listLeverandorer = () => list<Leverandor>("/api/leverandorer");
 export const opprettLeverandor = (data: { navn: string }) =>

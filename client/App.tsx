@@ -6,8 +6,10 @@ import { HurtigScreen } from "./src/screens/HurtigScreen";
 import { RapporterScreen } from "./src/screens/RapporterScreen";
 import { VarerScreen } from "./src/screens/VarerScreen";
 import { OppsettScreen } from "./src/screens/OppsettScreen";
+import { LoggInnScreen } from "./src/screens/LoggInnScreen";
 import { farger } from "./src/components/ui";
 import { hentLagretVerdi, lagreVerdi } from "./src/lib/lagring";
+import { abonner, erInnlogget, hentLagretBruker, loggUt } from "./src/lib/auth";
 
 const MODUS_NOKKEL = "artkl_visningsmodus";
 
@@ -33,8 +35,22 @@ const FANER = [
 type Modus = "felt" | "kontor";
 
 export default function App() {
+  const [innlogget, setInnlogget] = useState(erInnlogget());
+
+  useEffect(() => abonner(() => setInnlogget(erInnlogget())), []);
+
+  return (
+    <View style={stiler.rot}>
+      {innlogget ? <AutentisertApp /> : <LoggInnScreen />}
+      <StatusBar style="auto" />
+    </View>
+  );
+}
+
+function AutentisertApp() {
   const [modus, setModus] = useState<Modus>("kontor");
   const [aktivFane, setAktivFane] = useState<(typeof FANER)[number]["nokkel"]>("hurtig");
+  const bruker = hentLagretBruker();
 
   useEffect(() => {
     const lagret = hentLagretVerdi(MODUS_NOKKEL);
@@ -60,10 +76,13 @@ export default function App() {
   const AktivSkjerm = FANER.find((f) => f.nokkel === aktivFane)?.Skjerm ?? BeholdningScreen;
 
   return (
-    <View style={stiler.rot}>
+    <>
       <View style={stiler.toppRad}>
         <Pressable style={stiler.modusPille} onPress={byttModus}>
           <Text style={stiler.modusTekst}>{modus === "felt" ? "🚚 Felt-modus" : "🖥️ Kontor-modus"}</Text>
+        </Pressable>
+        <Pressable style={stiler.loggUtPille} onPress={loggUt}>
+          <Text style={stiler.loggUtTekst}>{bruker?.navn ? `${bruker.navn} · Logg ut` : "Logg ut"}</Text>
         </Pressable>
       </View>
       <View style={stiler.innhold}>
@@ -84,8 +103,7 @@ export default function App() {
           );
         })}
       </View>
-      <StatusBar style="auto" />
-    </View>
+    </>
   );
 }
 
@@ -97,7 +115,8 @@ const stiler = StyleSheet.create({
   },
   toppRad: {
     flexDirection: "row",
-    justifyContent: "flex-end",
+    justifyContent: "space-between",
+    alignItems: "center",
     paddingHorizontal: 12,
     paddingTop: 8,
   },
@@ -108,6 +127,17 @@ const stiler = StyleSheet.create({
     paddingVertical: 6,
   },
   modusTekst: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#666",
+  },
+  loggUtPille: {
+    backgroundColor: "#f0f0f0",
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  loggUtTekst: {
     fontSize: 12,
     fontWeight: "600",
     color: "#666",
