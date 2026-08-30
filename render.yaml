@@ -1,0 +1,38 @@
+# Render Blueprint for SWAGR-backend.
+# Opprett tjenesten via render.com -> New -> Blueprint, pek pa dette repoet.
+# Hemmeligheter (sync: false) fylles inn i Render-dashbordet etter forste deploy.
+services:
+  - type: web
+    name: swagr-backend
+    runtime: node
+    plan: free
+    region: frankfurt
+    rootDir: backend
+    buildCommand: npm ci && npm run build && npx prisma generate && npx prisma migrate deploy
+    startCommand: npm start
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      # Neon (pooled = DATABASE_URL, direct = DIRECT_URL)
+      - key: DATABASE_URL
+        sync: false
+      - key: DIRECT_URL
+        sync: false
+      # Anthropic
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      # Auth
+      - key: JWT_HEMMELIGHET
+        generateValue: true
+      - key: ADMIN_EPOST
+        sync: false
+      - key: ADMIN_PASSORD
+        sync: false
+      # Vercel Blob
+      - key: BLOB_READ_WRITE_TOKEN
+        sync: false
+      # Klientens origin for CORS (settes til Vercel-URL etter at klienten er deployet)
+      - key: KLIENT_URL
+        sync: false
