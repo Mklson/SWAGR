@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
-import * as ImagePicker from "expo-image-picker";
+import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { taBilde, type KomprimertBilde } from "../lib/bilde";
+import { hentLagretBruker } from "../lib/auth";
 import {
   ApiFeil,
   gjenkjennVariant,
+  lastOppBilde,
   listBevegelser,
   listBrukere,
   listKontekster,
@@ -71,6 +73,7 @@ export function VarerScreen() {
   const [variantMerkeId, setVariantMerkeId] = useState<string | null>(null);
   const [variantVerdi, setVariantVerdi] = useState("");
   const [variantBildeurl, setVariantBildeurl] = useState("");
+  const [variantBildeLaster, setVariantBildeLaster] = useState(false);
   const [variantFeil, setVariantFeil] = useState<string | null>(null);
   const [variantLaster, setVariantLaster] = useState(false);
 
@@ -115,6 +118,13 @@ export function VarerScreen() {
   useEffect(() => {
     lastInn();
   }, [lastInn]);
+
+  // Forhåndsvelg innlogget bruker som mottaker av varemottak (kan overstyres).
+  useEffect(() => {
+    if (mottakBrukerId || brukere.length === 0) return;
+    const innlogget = hentLagretBruker();
+    if (innlogget && brukere.some((b) => b.id === innlogget.id)) setMottakBrukerId(innlogget.id);
+  }, [brukere, mottakBrukerId]);
 
   const leverandorAlternativer = useMemo(
     () => leverandorer.map((l) => ({ verdi: l.id, label: l.navn })),
@@ -242,6 +252,23 @@ export function VarerScreen() {
     }
   }
 
+  async function taVariantbilde() {
+    setVariantFeil(null);
+    setVariantBildeLaster(true);
+    try {
+      const bilde = await taBilde();
+      if (!bilde) return;
+      const { url } = await lastOppBilde(bilde.base64);
+      setVariantBildeurl(url);
+    } catch (err) {
+      setVariantFeil(
+        err instanceof ApiFeil ? err.message : "Kunne ikke laste opp bildet. Prøv igjen.",
+      );
+    } finally {
+      setVariantBildeLaster(false);
+    }
+  }
+
   function innBevegelseNavn(b: Bevegelse) {
     const variant = varianter.find((v) => v.id === b.variantId);
     const vareNavn = variant ? vareMap.get(variant.vareId)?.navn : undefined;
@@ -363,8 +390,19 @@ export function VarerScreen() {
           placeholder="F.eks. 149,00"
           keyboardType="numeric"
         />
+        <View style={stiler.bildeRad}>
+          <View style={stiler.bildeRadKnapp}>
+            <Knapp
+              tittel={variantBildeurl ? "📷 Ta nytt bilde" : "📷 Ta bilde av varen"}
+              onPress={taVariantbilde}
+              disabled={variantBildeLaster}
+              variant="sekundaer"
+            />
+          </View>
+          {variantBildeurl ? <Miniatyr url={variantBildeurl} storrelse={48} /> : null}
+        </View>
         <TekstFelt
-          label="Bilde-URL (valgfritt)"
+          label="Bilde-URL (fylles av kamera, kan også limes inn)"
           value={variantBildeurl}
           onChangeText={setVariantBildeurl}
           placeholder="https://..."
@@ -424,9 +462,10 @@ export function VarerScreen() {
             setMottakVariantId(variantId);
             setKameraFormaal(null);
           }}
-          onForslagNyArtikkel={(resultat) => {
+          onForslagNyArtikkel={(resultat, bildeUrl) => {
             setVareNavn(resultat.varetype);
             if (resultat.synligSku) setVariantSku(resultat.synligSku);
+            if (bildeUrl) setVariantBildeurl(bildeUrl);
             setKameraFormaal(null);
           }}
         />
@@ -444,26 +483,29 @@ function VareKameraModal({
   formaal: "mottak" | "ny";
   onLukk: () => void;
   onFunnetEksisterende: (variantId: string) => void;
-  onForslagNyArtikkel: (resultat: VariantGjenkjenningResultat) => void;
+  onForslagNyArtikkel: (resultat: VariantGjenkjenningResultat, bildeUrl?: string) => void;
 }) {
   const [laster, setLaster] = useState(false);
   const [feil, setFeil] = useState<string | null>(null);
   const [resultat, setResultat] = useState<VariantGjenkjenningResultat | null>(null);
+  const [bilde, setBilde] = useState<KomprimertBilde | null>(null);
 
-  async function taBilde() {
-    const tillatelse = await ImagePicker.requestCameraPermissionsAsync();
-    if (!tillatelse.granted) {
-      Alert.alert("Kamera-tilgang kreves", "ARTKL trenger tilgang til kamera for å fotografere varer.");
-      return;
-    }
-    const valg = await ImagePicker.launchCameraAsync({ mediaTypes: ["images"], quality: 0.7, base64: true });
-    if (valg.canceled || !valg.assets[0].base64) return;
-
+  async function skannBilde() {
     setFeil(null);
     setResultat(null);
+    let tatt: KomprimertBilde | null;
+    try {
+      tatt = await taBilde();
+    } catch {
+      setFeil("Kunne ikke behandle bildet.");
+      return;
+    }
+    if (!tatt) return;
+    setBilde(tatt);
+
     setLaster(true);
     try {
-      const svar = await gjenkjennVariant(valg.assets[0].base64, "image/jpeg");
+      const svar = await gjenkjennVariant(tatt.base64, "image/jpeg");
       setResultat(svar);
       if (svar.variantId && svar.kandidater.length === 1) {
         onFunnetEksisterende(svar.variantId);
@@ -481,6 +523,26 @@ function VareKameraModal({
     }
   }
 
+  // Laster opp det skannede bildet så det blir den nye variantens bilde, og
+  // fyller forslaget inn i skjemaet under. Feiler opplastingen, går vi videre
+  // uten bilde - det kan legges til manuelt senere.
+  async function brukForslag(r: VariantGjenkjenningResultat) {
+    setLaster(true);
+    try {
+      let url: string | undefined;
+      if (bilde) {
+        try {
+          url = (await lastOppBilde(bilde.base64)).url;
+        } catch {
+          /* ignorer - fortsett uten bilde */
+        }
+      }
+      onForslagNyArtikkel(r, url);
+    } finally {
+      setLaster(false);
+    }
+  }
+
   return (
     <Modal visible transparent animationType="slide" onRequestClose={onLukk}>
       <Pressable style={stiler.modalBakgrunn} onPress={onLukk}>
@@ -488,7 +550,7 @@ function VareKameraModal({
           <Text style={stiler.modalTittel}>
             {formaal === "mottak" ? "Ta bilde av varen" : "Ta bilde for forslag til ny artikkel"}
           </Text>
-          <Knapp tittel="Åpne kamera" onPress={taBilde} disabled={laster} variant="sekundaer" />
+          <Knapp tittel="Åpne kamera" onPress={skannBilde} disabled={laster} variant="sekundaer" />
 
           {feil && <FeilBanner tekst={feil} />}
 
@@ -514,7 +576,11 @@ function VareKameraModal({
               <Text style={stiler.radUndertekst}>{resultat.beskrivelse}</Text>
               {resultat.synligSku && <Text style={stiler.radUndertekst}>Synlig SKU: {resultat.synligSku}</Text>}
               {formaal === "ny" && (
-                <Knapp tittel="Bruk forslag i skjemaet under" onPress={() => onForslagNyArtikkel(resultat)} />
+                <Knapp
+                  tittel={bilde ? "Bruk forslag + bilde i skjemaet" : "Bruk forslag i skjemaet under"}
+                  onPress={() => brukForslag(resultat)}
+                  disabled={laster}
+                />
               )}
             </View>
           )}
@@ -542,8 +608,24 @@ function RedigerVariantModal({
   const [merkeId, setMerkeId] = useState<string | null>(variant.merkeId);
   const [verdi, setVerdi] = useState(oreTilKrTekst(variant.verdiOre));
   const [bildeurl, setBildeurl] = useState(variant.bildeurl ?? "");
+  const [bildeLaster, setBildeLaster] = useState(false);
   const [feil, setFeil] = useState<string | null>(null);
   const [laster, setLaster] = useState(false);
+
+  async function byttBilde() {
+    setFeil(null);
+    setBildeLaster(true);
+    try {
+      const bilde = await taBilde();
+      if (!bilde) return;
+      const { url } = await lastOppBilde(bilde.base64);
+      setBildeurl(url);
+    } catch (err) {
+      setFeil(err instanceof ApiFeil ? err.message : "Kunne ikke laste opp bildet. Prøv igjen.");
+    } finally {
+      setBildeLaster(false);
+    }
+  }
 
   async function lagre() {
     setFeil(null);
@@ -589,6 +671,17 @@ function RedigerVariantModal({
             tomtekst="Ingen merke"
           />
           <TekstFelt label="Verdi per enhet, kr" value={verdi} onChangeText={setVerdi} keyboardType="numeric" />
+          <View style={stiler.bildeRad}>
+            <View style={stiler.bildeRadKnapp}>
+              <Knapp
+                tittel={bildeurl ? "📷 Ta nytt bilde" : "📷 Ta bilde"}
+                onPress={byttBilde}
+                disabled={bildeLaster}
+                variant="sekundaer"
+              />
+            </View>
+            {bildeurl ? <Miniatyr url={bildeurl} storrelse={48} /> : null}
+          </View>
           <TekstFelt label="Bilde-URL" value={bildeurl} onChangeText={setBildeurl} placeholder="https://..." />
 
           {feil && <FeilBanner tekst={feil} />}
@@ -633,6 +726,14 @@ const stiler = StyleSheet.create({
   suksessTekst: {
     color: farger.primaer,
     fontWeight: "600",
+  },
+  bildeRad: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  bildeRadKnapp: {
+    flex: 1,
   },
   kameraKnapp: {
     paddingVertical: 10,

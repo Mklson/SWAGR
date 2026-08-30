@@ -29,6 +29,7 @@ import {
   opprettReservasjon,
 } from "../api";
 import { hentLagretVerdi, lagreVerdi } from "../lib/lagring";
+import { hentLagretBruker } from "../lib/auth";
 import { formatterKroner } from "../lib/valuta";
 import { ALLE_KATEGORIER, MerkeOgKategoriFilter, UTEN_MERKE } from "../components/VareFilter";
 import type {
@@ -165,6 +166,13 @@ export function HurtigScreen() {
   }, [lokasjoner, lokasjonId]);
   useEffect(() => {
     if (brukere.length === 0 || brukerId) return;
+    // Forhåndsvelg den innloggede brukeren. Kan overstyres i feltet hvis man
+    // tar ut på vegne av noen andre. Faller tilbake på sist brukte bruker.
+    const innlogget = hentLagretBruker();
+    if (innlogget && brukere.some((b) => b.id === innlogget.id)) {
+      setBrukerId(innlogget.id);
+      return;
+    }
     const sistId = hentLagretVerdi(SISTE_BRUKER_NOKKEL);
     if (sistId && brukere.some((b) => b.id === sistId)) setBrukerId(sistId);
   }, [brukere, brukerId]);

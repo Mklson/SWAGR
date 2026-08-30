@@ -84,6 +84,14 @@ export function gjenkjennVariant(
   return create("/api/varianter/gjenkjenn", { fil: base64Bilde, mediaType });
 }
 
+export interface BildeOpplastingSvar {
+  url: string;
+}
+
+/** Laster opp et (allerede komprimert) JPEG-bilde som bar base64, får en offentlig URL. */
+export const lastOppBilde = (base64: string) =>
+  create<BildeOpplastingSvar>("/api/bilder", { fil: base64, mediaType: "image/jpeg" });
+
 // --- Auth ---
 
 export interface InnloggingSvar {
