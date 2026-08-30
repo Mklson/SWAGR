@@ -207,7 +207,7 @@ export function HurtigScreen() {
   function startØkt() {
     setOppsettFeil(null);
     if (!lokasjonId || !kontekstId || !brukerId) {
-      setOppsettFeil("Velg lokasjon, kontekst og bruker for å starte.");
+      setOppsettFeil("Velg lokasjon, formål og bruker for å starte.");
       return;
     }
     lagreVerdi(SISTE_BRUKER_NOKKEL, brukerId);
@@ -368,7 +368,7 @@ export function HurtigScreen() {
         <Text style={stiler.tittel}>Uttak</Text>
         <Text style={stiler.undertekst}>
           Den vanlige veien for å levere til, ta imot fra eller reservere for en kunde. Velg
-          kunde/kontekst én gang, skann så vare etter vare — legg i kurv, og fullfør til slutt.
+          kunde/formål én gang, skann så vare etter vare — legg i kurv, og fullfør til slutt.
         </Text>
 
         <View style={stiler.typeRad}>
@@ -380,7 +380,7 @@ export function HurtigScreen() {
         {lokasjoner.length > 1 && (
           <VelgFelt label="Lokasjon" valgt={lokasjonId} alternativer={lokasjonAlternativer} onVelg={setLokasjonId} />
         )}
-        <VelgFelt label="Kontekst" valgt={kontekstId} alternativer={kontekstAlternativer} onVelg={setKontekstId} />
+        <VelgFelt label="Formål" valgt={kontekstId} alternativer={kontekstAlternativer} onVelg={setKontekstId} />
         <VelgFelt label="Bruker" valgt={brukerId} alternativer={brukerAlternativer} onVelg={setBrukerId} />
         {type === "reserver" && (
           <TekstFelt

@@ -167,7 +167,7 @@ export function VarerScreen() {
     setMottakSuksess(null);
     const antallTall = Number(mottakAntall);
     if (!mottakVariantId || !mottakLokasjonId || !mottakKontekstId || !mottakBrukerId) {
-      setMottakFeil("Velg vare, lokasjon, kontekst og bruker.");
+      setMottakFeil("Velg vare, lokasjon, formål og bruker.");
       return;
     }
     if (!Number.isInteger(antallTall) || antallTall <= 0) {
@@ -301,7 +301,7 @@ export function VarerScreen() {
           onVelg={setMottakLokasjonId}
         />
         <VelgFelt
-          label="Kontekst"
+          label="Formål"
           valgt={mottakKontekstId}
           alternativer={innkjopKontekstAlternativer}
           onVelg={setMottakKontekstId}

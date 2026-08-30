@@ -425,7 +425,7 @@ function KontekstSeksjon({
 
   return (
     <View style={stiler.seksjon}>
-      <SeksjonsTittel>Kontekster</SeksjonsTittel>
+      <SeksjonsTittel>Formål</SeksjonsTittel>
       <VelgFelt label="Type" valgt={type} alternativer={KONTEKST_TYPER} onVelg={(v) => setType(v as KontekstType)} />
       <TekstFelt label="Navn" value={navn} onChangeText={setNavn} placeholder="F.eks. Kunde AS / Event X" />
       <TekstFelt
@@ -435,10 +435,10 @@ function KontekstSeksjon({
         placeholder="F.eks. ordrenr."
       />
       {feil && <FeilBanner tekst={feil} />}
-      <Knapp tittel="Legg til kontekst" onPress={leggTil} disabled={laster} variant="sekundaer" />
+      <Knapp tittel="Legg til formål" onPress={leggTil} disabled={laster} variant="sekundaer" />
       <View style={stiler.liste}>
         {kontekster.length === 0 ? (
-          <TomListeTekst tekst="Ingen kontekster registrert ennå." />
+          <TomListeTekst tekst="Ingen formål registrert ennå." />
         ) : (
           kontekster.map((k) => (
             <Kort key={k.id}>

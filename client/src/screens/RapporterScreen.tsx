@@ -215,7 +215,7 @@ function FleksibelRapport({
     <View style={stiler.seksjon}>
       <SeksjonsTittel>Fleksibel rapport: merke og/eller kunde</SeksjonsTittel>
       <Text style={stiler.hjelpetekst}>
-        Velg kun merke for å se det merket på tvers av alle kunder, kun kontekst for å se én kunde
+        Velg kun merke for å se det merket på tvers av alle kunder, kun formål for å se én kunde
         på tvers av alle merker, begge for én kombinasjon, eller ingen for alt.
       </Text>
 
@@ -227,11 +227,11 @@ function FleksibelRapport({
         tomtekst="Alle merker"
       />
       <VelgFelt
-        label="Kontekst (valgfritt)"
+        label="Formål (valgfritt)"
         valgt={kontekstId}
         alternativer={kontekstAlternativer}
         onVelg={setKontekstId}
-        tomtekst="Alle kontekster"
+        tomtekst="Alle formål"
       />
       <Periodevelger fra={fra} til={til} onFraChange={setFra} onTilChange={setTil} />
 
@@ -341,11 +341,11 @@ function PeriodeRapport({
         tomtekst="Alle lokasjoner"
       />
       <VelgFelt
-        label="Kontekst (valgfritt)"
+        label="Formål (valgfritt)"
         valgt={kontekstId}
         alternativer={kontekstAlternativer}
         onVelg={setKontekstId}
-        tomtekst="Alle kontekster"
+        tomtekst="Alle formål"
       />
       <Periodevelger fra={fra} til={til} onFraChange={setFra} onTilChange={setTil} />
 
@@ -406,7 +406,7 @@ function KontekstRapport({
   async function hent() {
     setFeil(null);
     if (!kontekstId) {
-      setFeil("Velg en kontekst.");
+      setFeil("Velg et formål.");
       return;
     }
     setLaster(true);
@@ -426,7 +426,7 @@ function KontekstRapport({
   function eksporter() {
     if (!rader) return;
     eksporterCsv(
-      `rapport-kontekst-${dagensDato()}`,
+      `rapport-formaal-${dagensDato()}`,
       ["Vare/variant", "Type", "Antall", "Verdi (kr)"],
       rader.map((r) => [variantNavn(r.variantId), r.type, r.antall, oreTilKrTekst(r.verdiOre)]),
     );
@@ -434,12 +434,12 @@ function KontekstRapport({
 
   return (
     <View style={stiler.seksjon}>
-      <SeksjonsTittel>Totalt per variant for én kontekst</SeksjonsTittel>
+      <SeksjonsTittel>Totalt per variant for ett formål</SeksjonsTittel>
       <Text style={stiler.hjelpetekst}>
         F.eks. hvor mye som er levert til en gitt kunde, eller brukt på et gitt prosjekt.
       </Text>
 
-      <VelgFelt label="Kontekst" valgt={kontekstId} alternativer={kontekstAlternativer} onVelg={setKontekstId} />
+      <VelgFelt label="Formål" valgt={kontekstId} alternativer={kontekstAlternativer} onVelg={setKontekstId} />
       <Periodevelger fra={fra} til={til} onFraChange={setFra} onTilChange={setTil} />
 
       {feil && <FeilBanner tekst={feil} />}
@@ -448,7 +448,7 @@ function KontekstRapport({
       {rader !== null && (
         <View style={stiler.resultatListe}>
           {rader.length === 0 ? (
-            <TomListeTekst tekst="Ingen bevegelser registrert for denne konteksten." />
+            <TomListeTekst tekst="Ingen bevegelser registrert for dette formålet." />
           ) : (
             <>
               {(() => {
@@ -521,7 +521,7 @@ function KundeHistorikkSeksjon({
   async function hent() {
     setFeil(null);
     if (!kontekstId) {
-      setFeil("Velg en kunde/kontekst.");
+      setFeil("Velg en kunde / et formål.");
       return;
     }
     setLaster(true);
@@ -552,13 +552,13 @@ function KundeHistorikkSeksjon({
 
   return (
     <View style={stiler.seksjon}>
-      <SeksjonsTittel>Full historikk for en kunde/kontekst</SeksjonsTittel>
+      <SeksjonsTittel>Full historikk for en kunde / et formål</SeksjonsTittel>
       <Text style={stiler.hjelpetekst}>
         Hver enkelt bevegelse i rekkefølge — nyeste først. Nyttig for å se nøyaktig hva som har
         skjedd med én kunde, ikke bare summerte tall.
       </Text>
 
-      <VelgFelt label="Kontekst" valgt={kontekstId} alternativer={kontekstAlternativer} onVelg={setKontekstId} />
+      <VelgFelt label="Formål" valgt={kontekstId} alternativer={kontekstAlternativer} onVelg={setKontekstId} />
 
       {feil && <FeilBanner tekst={feil} />}
       <Knapp tittel="Hent historikk" onPress={hent} disabled={laster} variant="sekundaer" />
@@ -566,7 +566,7 @@ function KundeHistorikkSeksjon({
       {bevegelser !== null && (
         <View style={stiler.resultatListe}>
           {bevegelser.length === 0 ? (
-            <TomListeTekst tekst="Ingen bevegelser registrert for denne konteksten." />
+            <TomListeTekst tekst="Ingen bevegelser registrert for dette formålet." />
           ) : (
             <>
               <Knapp tittel="📊 Eksporter til Excel (CSV)" onPress={eksporter} variant="sekundaer" />
