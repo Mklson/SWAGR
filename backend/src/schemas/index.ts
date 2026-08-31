@@ -10,6 +10,18 @@ export const vareCreateSchema = z.object({
   leverandorId: z.string().uuid(),
 });
 
+export const vareUpdateSchema = z
+  .object({
+    navn: z.string().min(1),
+    kategori: z.string().min(1),
+    leverandorId: z.string().uuid(),
+  })
+  .partial();
+
+export const vareIdParamsSchema = z.object({
+  id: z.string().uuid(),
+});
+
 export const merkeCreateSchema = z.object({
   navn: z.string().min(1),
   logoUrl: z.string().url().optional(),
