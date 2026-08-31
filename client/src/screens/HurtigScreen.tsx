@@ -708,12 +708,6 @@ function VariantGrid({
       keyboardShouldPersistTaps="handled"
       ListHeaderComponent={
         <View style={stiler.gridHeader}>
-          <TextInput
-            style={stiler.søkInput}
-            value={søk}
-            onChangeText={onSøkChange}
-            placeholder="Søk artikkel, SKU eller merke..."
-          />
           <MerkeOgKategoriFilter
             idPrefiks="hurtig"
             merkeAlternativer={merkeAlternativer}
@@ -723,6 +717,12 @@ function VariantGrid({
             kategoriAlternativer={kategoriAlternativer}
             valgtKategori={valgtKategori}
             onValgtKategoriChange={onValgtKategoriChange}
+          />
+          <TextInput
+            style={stiler.søkInput}
+            value={søk}
+            onChangeText={onSøkChange}
+            placeholder="Søk artikkel, SKU eller merke..."
           />
           <View style={stiler.sortRad}>
             {SORT_VALG.map((s) => (
