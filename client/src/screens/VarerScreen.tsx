@@ -19,6 +19,7 @@ import {
   oppdaterVare,
   oppdaterVariant,
   opprettBevegelse,
+  opprettMerke,
   opprettVare,
   opprettVariant,
 } from "../api";
@@ -333,6 +334,92 @@ function VaremottakSkjema({
   );
 }
 
+// Merke-dropdown med «+ Nytt merke» inline, så man slipper å bytte til Oppsett.
+function MerkeVelger({
+  merkeAlternativer,
+  valgt,
+  onVelg,
+  onMerkeOpprettet,
+}: {
+  merkeAlternativer: MerkeAlternativ[];
+  valgt: string | null;
+  onVelg: (id: string | null) => void;
+  onMerkeOpprettet: () => Promise<void>;
+}) {
+  const [visNy, setVisNy] = useState(false);
+  const [navn, setNavn] = useState("");
+  const [logoUrl, setLogoUrl] = useState("");
+  const [feil, setFeil] = useState<string | null>(null);
+  const [laster, setLaster] = useState(false);
+
+  async function opprett() {
+    setFeil(null);
+    if (!navn.trim()) {
+      setFeil("Fyll ut merkenavn.");
+      return;
+    }
+    setLaster(true);
+    try {
+      const m = await opprettMerke({ navn: navn.trim(), logoUrl: logoUrl.trim() || undefined });
+      await onMerkeOpprettet();
+      onVelg(m.id);
+      setNavn("");
+      setLogoUrl("");
+      setVisNy(false);
+    } catch (err) {
+      setFeil(err instanceof ApiFeil ? err.message : "Kunne ikke opprette merket.");
+    } finally {
+      setLaster(false);
+    }
+  }
+
+  return (
+    <View style={{ gap: 8 }}>
+      <VelgFelt
+        label="Merke (valgfritt)"
+        valgt={valgt}
+        alternativer={merkeAlternativer}
+        onVelg={onVelg}
+        tomtekst={merkeAlternativer.length === 0 ? "Ingen merker ennå" : "Velg merke"}
+      />
+      {visNy ? (
+        <View style={stiler.nyMerkeBoks}>
+          <TekstFelt
+            label="Nytt merke — navn"
+            value={navn}
+            onChangeText={setNavn}
+            placeholder="F.eks. Acme Events"
+          />
+          <TekstFelt
+            label="Logo-URL (valgfritt)"
+            value={logoUrl}
+            onChangeText={setLogoUrl}
+            placeholder="https://..."
+          />
+          {feil && <FeilBanner tekst={feil} />}
+          <View style={stiler.knappRad}>
+            <View style={stiler.knappRadCelle}>
+              <Knapp
+                tittel="Avbryt"
+                onPress={() => setVisNy(false)}
+                variant="sekundaer"
+                disabled={laster}
+              />
+            </View>
+            <View style={stiler.knappRadCelle}>
+              <Knapp tittel="Opprett merke" onPress={opprett} disabled={laster} />
+            </View>
+          </View>
+        </View>
+      ) : (
+        <Pressable onPress={() => setVisNy(true)}>
+          <Text style={stiler.lenkeTekst}>+ Nytt merke</Text>
+        </Pressable>
+      )}
+    </View>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Ny artikkel (vare + første variant i ett)
 // ---------------------------------------------------------------------------
@@ -453,12 +540,11 @@ function NyArtikkelSkjema({
         keyboardType="numeric"
         placeholder="F.eks. 149,00"
       />
-      <VelgFelt
-        label="Merke (valgfritt)"
+      <MerkeVelger
+        merkeAlternativer={merkeAlternativer}
         valgt={merkeId}
-        alternativer={merkeAlternativer}
         onVelg={setMerkeId}
-        tomtekst={merkeAlternativer.length === 0 ? "Ingen merker — opprett i Oppsett" : "Velg merke"}
+        onMerkeOpprettet={onOpprettet}
       />
       <TekstFelt
         label="SKU (autogenerert — kan endres)"
@@ -1026,6 +1112,19 @@ const stiler = StyleSheet.create({
   },
   knappRadCelle: {
     flex: 1,
+  },
+  nyMerkeBoks: {
+    gap: 10,
+    padding: 12,
+    borderRadius: 8,
+    backgroundColor: "#fafafa",
+    borderWidth: 1,
+    borderColor: "#eee",
+  },
+  lenkeTekst: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: farger.primaer,
   },
   modalBakgrunn: {
     flex: 1,
