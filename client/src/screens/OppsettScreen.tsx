@@ -21,7 +21,7 @@ import {
   Knapp,
   Kort,
   Miniatyr,
-  SeksjonsTittel,
+  Sammenleggbar,
   TekstFelt,
   TomListeTekst,
   VelgFelt,
@@ -62,17 +62,40 @@ export function OppsettScreen() {
     lastInn();
   }, [lastInn]);
 
+  const [apen, setApen] = useState<string | null>("leverandor");
+  const toggle = (s: string) => setApen((n) => (n === s ? null : s));
+
   return (
-    <ScrollView style={stiler.rot} contentContainerStyle={stiler.scrollInnhold}>
+    <ScrollView
+      style={stiler.rot}
+      contentContainerStyle={stiler.scrollInnhold}
+      keyboardShouldPersistTaps="handled"
+    >
       <Text style={stiler.tittel}>Oppsett</Text>
       <Text style={stiler.undertekst}>Referansedata brukt ved registrering av bevegelser</Text>
 
-      <LeverandorSeksjon leverandorer={leverandorer} onLagtTil={lastInn} />
-      <LokasjonSeksjon lokasjoner={lokasjoner} onLagtTil={lastInn} />
-      <MerkeSeksjon merker={merker} onLagtTil={lastInn} />
-      <KundeImportSeksjon kontekster={kontekster} onLagtTil={lastInn} />
-      <KontekstSeksjon kontekster={kontekster} onLagtTil={lastInn} />
-      <BrukerSeksjon brukere={brukere} onLagtTil={lastInn} />
+      <Sammenleggbar tittel="Leverandører" apen={apen === "leverandor"} onToggle={() => toggle("leverandor")}>
+        <LeverandorSeksjon leverandorer={leverandorer} onLagtTil={lastInn} />
+      </Sammenleggbar>
+      <Sammenleggbar tittel="Lokasjoner" apen={apen === "lokasjon"} onToggle={() => toggle("lokasjon")}>
+        <LokasjonSeksjon lokasjoner={lokasjoner} onLagtTil={lastInn} />
+      </Sammenleggbar>
+      <Sammenleggbar tittel="Merker" apen={apen === "merke"} onToggle={() => toggle("merke")}>
+        <MerkeSeksjon merker={merker} onLagtTil={lastInn} />
+      </Sammenleggbar>
+      <Sammenleggbar tittel="Formål" apen={apen === "formaal"} onToggle={() => toggle("formaal")}>
+        <KontekstSeksjon kontekster={kontekster} onLagtTil={lastInn} />
+      </Sammenleggbar>
+      <Sammenleggbar
+        tittel="Importer kunder fra CSV"
+        apen={apen === "import"}
+        onToggle={() => toggle("import")}
+      >
+        <KundeImportSeksjon kontekster={kontekster} onLagtTil={lastInn} />
+      </Sammenleggbar>
+      <Sammenleggbar tittel="Brukere" apen={apen === "bruker"} onToggle={() => toggle("bruker")}>
+        <BrukerSeksjon brukere={brukere} onLagtTil={lastInn} />
+      </Sammenleggbar>
     </ScrollView>
   );
 }
@@ -103,8 +126,7 @@ function MerkeSeksjon({ merker, onLagtTil }: { merker: Merke[]; onLagtTil: () =>
   }
 
   return (
-    <View style={stiler.seksjon}>
-      <SeksjonsTittel>Merker</SeksjonsTittel>
+    <View style={stiler.seksjonInnhold}>
       <Text style={stiler.hjelpetekst}>
         Brukes for gruppering og filtrering av varianter etter merke/kunde-logo på Beholdning.
       </Text>
@@ -232,8 +254,7 @@ function KundeImportSeksjon({
   }
 
   return (
-    <View style={stiler.seksjon}>
-      <SeksjonsTittel>Importer kunder fra CSV</SeksjonsTittel>
+    <View style={stiler.seksjonInnhold}>
       <Text style={stiler.hjelpetekst}>
         Har dere allerede en kundeliste i et annet system (regnskap, CRM)? Eksporter den som CSV
         (i Excel: Fil → Lagre som → CSV) og last den opp her i stedet for å opprette kundene på
@@ -317,8 +338,7 @@ function LeverandorSeksjon({
   }
 
   return (
-    <View style={stiler.seksjon}>
-      <SeksjonsTittel>Leverandører</SeksjonsTittel>
+    <View style={stiler.seksjonInnhold}>
       <TekstFelt label="Navn" value={navn} onChangeText={setNavn} placeholder="F.eks. Nordic Supplies AS" />
       {feil && <FeilBanner tekst={feil} />}
       <Knapp tittel="Legg til leverandør" onPress={leggTil} disabled={laster} variant="sekundaer" />
@@ -369,8 +389,7 @@ function LokasjonSeksjon({
   }
 
   return (
-    <View style={stiler.seksjon}>
-      <SeksjonsTittel>Lokasjoner</SeksjonsTittel>
+    <View style={stiler.seksjonInnhold}>
       <TekstFelt label="Navn" value={navn} onChangeText={setNavn} placeholder="F.eks. Hovedlager" />
       <TekstFelt label="Type" value={type} onChangeText={setType} placeholder="F.eks. lager, bil, butikk" />
       {feil && <FeilBanner tekst={feil} />}
@@ -424,8 +443,7 @@ function KontekstSeksjon({
   }
 
   return (
-    <View style={stiler.seksjon}>
-      <SeksjonsTittel>Formål</SeksjonsTittel>
+    <View style={stiler.seksjonInnhold}>
       <VelgFelt label="Type" valgt={type} alternativer={KONTEKST_TYPER} onVelg={(v) => setType(v as KontekstType)} />
       <TekstFelt label="Navn" value={navn} onChangeText={setNavn} placeholder="F.eks. Kunde AS / Event X" />
       <TekstFelt
@@ -478,8 +496,7 @@ function BrukerSeksjon({ brukere, onLagtTil }: { brukere: Bruker[]; onLagtTil: (
   }
 
   return (
-    <View style={stiler.seksjon}>
-      <SeksjonsTittel>Brukere</SeksjonsTittel>
+    <View style={stiler.seksjonInnhold}>
       <TekstFelt label="Navn" value={navn} onChangeText={setNavn} placeholder="F.eks. Kari Nordmann" />
       <TekstFelt label="Rolle" value={rolle} onChangeText={setRolle} placeholder="F.eks. Lagermedarbeider" />
       {feil && <FeilBanner tekst={feil} />}
@@ -508,8 +525,8 @@ const stiler = StyleSheet.create({
   scrollInnhold: {
     paddingHorizontal: 16,
     paddingTop: 20,
-    paddingBottom: 32,
-    gap: 8,
+    paddingBottom: 40,
+    gap: 10,
   },
   tittel: {
     fontSize: 24,
@@ -520,12 +537,8 @@ const stiler = StyleSheet.create({
     color: "#555",
     marginBottom: 8,
   },
-  seksjon: {
+  seksjonInnhold: {
     gap: 12,
-    marginTop: 16,
-    paddingTop: 16,
-    borderTopWidth: 1,
-    borderTopColor: "#eee",
   },
   liste: {
     gap: 8,
