@@ -266,6 +266,37 @@ export function SeksjonsTittel({ children }: { children: React.ReactNode }) {
   return <Text style={stiler.seksjonsTittel}>{children}</Text>;
 }
 
+/**
+ * Sammenleggbar seksjon. Kontrollert av forelderen (apen/onToggle) så en
+ * skjerm kan la bare én stå åpen om gangen (trekkspill).
+ */
+export function Sammenleggbar({
+  tittel,
+  undertekst,
+  apen,
+  onToggle,
+  children,
+}: {
+  tittel: string;
+  undertekst?: string;
+  apen: boolean;
+  onToggle: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <View style={stiler.sammenleggbar}>
+      <Pressable style={stiler.sammenleggbarHode} onPress={onToggle}>
+        <View style={{ flex: 1 }}>
+          <Text style={stiler.sammenleggbarTittel}>{tittel}</Text>
+          {undertekst ? <Text style={stiler.sammenleggbarUndertekst}>{undertekst}</Text> : null}
+        </View>
+        <Text style={stiler.sammenleggbarPil}>{apen ? "▾" : "▸"}</Text>
+      </Pressable>
+      {apen ? <View style={stiler.sammenleggbarInnhold}>{children}</View> : null}
+    </View>
+  );
+}
+
 export function FeilBanner({ tekst }: { tekst: string }) {
   return (
     <View style={stiler.feilBoks}>
@@ -366,6 +397,40 @@ const stiler = StyleSheet.create({
   nedtrekkTomtekst: {
     color: "#888",
     paddingVertical: 12,
+  },
+  sammenleggbar: {
+    borderWidth: 1,
+    borderColor: farger.kant,
+    borderRadius: 10,
+    overflow: "hidden",
+  },
+  sammenleggbarHode: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    backgroundColor: "#fafafa",
+  },
+  sammenleggbarTittel: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: farger.tekst,
+  },
+  sammenleggbarUndertekst: {
+    fontSize: 12,
+    color: "#888",
+    marginTop: 2,
+  },
+  sammenleggbarPil: {
+    fontSize: 14,
+    color: "#888",
+  },
+  sammenleggbarInnhold: {
+    padding: 14,
+    gap: 12,
+    borderTopWidth: 1,
+    borderTopColor: "#eee",
   },
   modalTittel: {
     fontSize: 16,

@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "client",
-    "slug": "client",
+    "name": "SWAGR",
+    "slug": "swagr",
     "version": "1.0.0",
     "orientation": "default",
     "icon": "./assets/icon.png",
@@ -25,8 +25,8 @@
       [
         "expo-image-picker",
         {
-          "cameraPermission": "ARTKL trenger tilgang til kamera for å fotografere varer.",
-          "photosPermission": false,
+          "cameraPermission": "SWAGR trenger tilgang til kamera for å fotografere varer.",
+          "photosPermission": "SWAGR trenger tilgang til bildebiblioteket for å legge til varebilder.",
           "microphonePermission": false
         }
       ]

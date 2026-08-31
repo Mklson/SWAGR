@@ -46,18 +46,26 @@ export async function komprimerBilde(uri: string): Promise<KomprimertBilde> {
   }
 }
 
+// Komprimer et valgt bilde; faller tilbake til kameraets/bibliotekets rå
+// base64 hvis komprimeringen feiler helt (typisk web).
+async function fraAsset(asset: ImagePicker.ImagePickerAsset): Promise<KomprimertBilde> {
+  try {
+    return await komprimerBilde(asset.uri);
+  } catch (err) {
+    console.warn("[bilde] komprimering feilet, bruker rått bilde", err);
+    if (asset.base64) return { base64: utenPrefiks(asset.base64), uri: asset.uri };
+    throw err;
+  }
+}
+
 /**
  * Åpner kamera og returnerer et komprimert bilde, eller null hvis brukeren
- * avbrøt eller nektet kamera-tilgang. Feiler komprimeringen helt, brukes
- * det rå bildet fra kameraet som siste utvei.
+ * avbrøt eller nektet kamera-tilgang.
  */
 export async function taBilde(): Promise<KomprimertBilde | null> {
   const tillatelse = await ImagePicker.requestCameraPermissionsAsync();
   if (!tillatelse.granted) {
-    Alert.alert(
-      "Kamera-tilgang kreves",
-      "SWAGR trenger tilgang til kamera for å fotografere varer.",
-    );
+    Alert.alert("Kamera-tilgang kreves", "SWAGR trenger tilgang til kamera for å fotografere varer.");
     return null;
   }
   const valg = await ImagePicker.launchCameraAsync({
@@ -66,13 +74,24 @@ export async function taBilde(): Promise<KomprimertBilde | null> {
     base64: true,
   });
   if (valg.canceled || !valg.assets[0]?.uri) return null;
-  const asset = valg.assets[0];
+  return fraAsset(valg.assets[0]);
+}
 
-  try {
-    return await komprimerBilde(asset.uri);
-  } catch (err) {
-    console.warn("[bilde] komprimering feilet, bruker rått kamerabilde", err);
-    if (asset.base64) return { base64: utenPrefiks(asset.base64), uri: asset.uri };
-    throw err;
+/**
+ * Åpner enhetens bildebibliotek og returnerer et komprimert bilde, eller
+ * null hvis brukeren avbrøt eller nektet tilgang.
+ */
+export async function velgBildeFraBibliotek(): Promise<KomprimertBilde | null> {
+  const tillatelse = await ImagePicker.requestMediaLibraryPermissionsAsync();
+  if (!tillatelse.granted) {
+    Alert.alert("Tilgang kreves", "SWAGR trenger tilgang til bildebiblioteket for å legge til varebilder.");
+    return null;
   }
+  const valg = await ImagePicker.launchImageLibraryAsync({
+    mediaTypes: ["images"],
+    quality: 0.8,
+    base64: true,
+  });
+  if (valg.canceled || !valg.assets[0]?.uri) return null;
+  return fraAsset(valg.assets[0]);
 }
