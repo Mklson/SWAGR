@@ -3,11 +3,13 @@ import { ScrollView, StyleSheet, Text, View } from "react-native";
 import {
   ApiFeil,
   listBrukere,
+  listFormaal,
   listKontekster,
   listLeverandorer,
   listLokasjoner,
   listMerker,
   opprettBruker,
+  opprettFormaal,
   opprettKontekst,
   opprettLeverandor,
   opprettLokasjon,
@@ -15,7 +17,7 @@ import {
 } from "../api";
 import { gjettKolonne, parseCsv } from "../lib/csv";
 import { velgTekstfil } from "../lib/nettleserFil";
-import type { Bruker, Kontekst, KontekstType, Leverandor, Lokasjon, Merke } from "../types";
+import type { Bruker, Formaal, Kontekst, Leverandor, Lokasjon, Merke } from "../types";
 import {
   FeilBanner,
   Knapp,
@@ -27,33 +29,27 @@ import {
   VelgFelt,
 } from "../components/ui";
 
-const KONTEKST_TYPER: { verdi: KontekstType; label: string }[] = [
-  { verdi: "kunde", label: "Kunde" },
-  { verdi: "prosjekt", label: "Prosjekt" },
-  { verdi: "internbruk", label: "Internbruk" },
-  { verdi: "svinn", label: "Svinn" },
-  { verdi: "retur", label: "Retur" },
-  { verdi: "innkjop", label: "Innkjøp" },
-];
-
 export function OppsettScreen() {
   const [leverandorer, setLeverandorer] = useState<Leverandor[]>([]);
   const [lokasjoner, setLokasjoner] = useState<Lokasjon[]>([]);
   const [kontekster, setKontekster] = useState<Kontekst[]>([]);
+  const [formaal, setFormaal] = useState<Formaal[]>([]);
   const [brukere, setBrukere] = useState<Bruker[]>([]);
   const [merker, setMerker] = useState<Merke[]>([]);
 
   const lastInn = useCallback(async () => {
-    const [l, lo, k, b, m] = await Promise.all([
+    const [l, lo, k, f, b, m] = await Promise.all([
       listLeverandorer(),
       listLokasjoner(),
       listKontekster(),
+      listFormaal(),
       listBrukere(),
       listMerker(),
     ]);
     setLeverandorer(l);
     setLokasjoner(lo);
     setKontekster(k);
+    setFormaal(f);
     setBrukere(b);
     setMerker(m);
   }, []);
@@ -83,8 +79,11 @@ export function OppsettScreen() {
       <Sammenleggbar tittel="Merker" apen={apen === "merke"} onToggle={() => toggle("merke")}>
         <MerkeSeksjon merker={merker} onLagtTil={lastInn} />
       </Sammenleggbar>
+      <Sammenleggbar tittel="Kunder" apen={apen === "kunde"} onToggle={() => toggle("kunde")}>
+        <KunderSeksjon kontekster={kontekster} onLagtTil={lastInn} />
+      </Sammenleggbar>
       <Sammenleggbar tittel="Formål" apen={apen === "formaal"} onToggle={() => toggle("formaal")}>
-        <KontekstSeksjon kontekster={kontekster} onLagtTil={lastInn} />
+        <FormaalSeksjon formaal={formaal} onLagtTil={lastInn} />
       </Sammenleggbar>
       <Sammenleggbar
         tittel="Importer kunder fra CSV"
@@ -410,7 +409,7 @@ function LokasjonSeksjon({
   );
 }
 
-function KontekstSeksjon({
+function KunderSeksjon({
   kontekster,
   onLagtTil,
 }: {
@@ -418,25 +417,30 @@ function KontekstSeksjon({
   onLagtTil: () => Promise<void>;
 }) {
   const [navn, setNavn] = useState("");
-  const [type, setType] = useState<KontekstType | null>(null);
-  const [referanse, setReferanse] = useState("");
+  const [kundenr, setKundenr] = useState("");
   const [feil, setFeil] = useState<string | null>(null);
   const [laster, setLaster] = useState(false);
 
+  const kunder = kontekster.filter((k) => k.type === "kunde");
+
   async function leggTil() {
     setFeil(null);
-    if (!navn.trim() || !type) {
-      setFeil("Fyll ut navn og type.");
+    if (!navn.trim()) {
+      setFeil("Fyll ut navn.");
       return;
     }
     setLaster(true);
     try {
-      await opprettKontekst({ navn: navn.trim(), type, referanse: referanse.trim() || undefined });
+      await opprettKontekst({
+        navn: navn.trim(),
+        type: "kunde",
+        referanse: kundenr.trim() || undefined,
+      });
       setNavn("");
-      setReferanse("");
+      setKundenr("");
       await onLagtTil();
     } catch (err) {
-      setFeil(err instanceof ApiFeil ? err.message : "Kunne ikke opprette kontekst.");
+      setFeil(err instanceof ApiFeil ? err.message : "Kunne ikke opprette kunden.");
     } finally {
       setLaster(false);
     }
@@ -444,24 +448,78 @@ function KontekstSeksjon({
 
   return (
     <View style={stiler.seksjonInnhold}>
-      <VelgFelt label="Type" valgt={type} alternativer={KONTEKST_TYPER} onVelg={(v) => setType(v as KontekstType)} />
-      <TekstFelt label="Navn" value={navn} onChangeText={setNavn} placeholder="F.eks. Kunde AS / Event X" />
+      <Text style={stiler.hjelpetekst}>
+        Kundene et uttak kan registreres på. Kan også lastes inn i bulk fra CSV nedenfor.
+      </Text>
+      <TekstFelt label="Navn" value={navn} onChangeText={setNavn} placeholder="F.eks. Solstrand Hotell" />
       <TekstFelt
-        label="Referanse (valgfritt)"
-        value={referanse}
-        onChangeText={setReferanse}
-        placeholder="F.eks. ordrenr."
+        label="Kundenr (valgfritt)"
+        value={kundenr}
+        onChangeText={setKundenr}
+        placeholder="F.eks. 1042"
       />
+      {feil && <FeilBanner tekst={feil} />}
+      <Knapp tittel="Legg til kunde" onPress={leggTil} disabled={laster} variant="sekundaer" />
+      <View style={stiler.liste}>
+        {kunder.length === 0 ? (
+          <TomListeTekst tekst="Ingen kunder registrert ennå." />
+        ) : (
+          kunder.map((k) => (
+            <Kort key={k.id}>
+              <Text style={stiler.radTittel}>{k.navn}</Text>
+              {k.referanse && <Text style={stiler.radUndertekst}>Kundenr: {k.referanse}</Text>}
+            </Kort>
+          ))
+        )}
+      </View>
+    </View>
+  );
+}
+
+function FormaalSeksjon({
+  formaal,
+  onLagtTil,
+}: {
+  formaal: Formaal[];
+  onLagtTil: () => Promise<void>;
+}) {
+  const [navn, setNavn] = useState("");
+  const [feil, setFeil] = useState<string | null>(null);
+  const [laster, setLaster] = useState(false);
+
+  async function leggTil() {
+    setFeil(null);
+    if (!navn.trim()) {
+      setFeil("Fyll ut navn.");
+      return;
+    }
+    setLaster(true);
+    try {
+      await opprettFormaal({ navn: navn.trim() });
+      setNavn("");
+      await onLagtTil();
+    } catch (err) {
+      setFeil(err instanceof ApiFeil ? err.message : "Kunne ikke opprette formålet.");
+    } finally {
+      setLaster(false);
+    }
+  }
+
+  return (
+    <View style={stiler.seksjonInnhold}>
+      <Text style={stiler.hjelpetekst}>
+        Hva et uttak er til — f.eks. Festival, Messe, Gave. Velges ved hvert uttak.
+      </Text>
+      <TekstFelt label="Navn" value={navn} onChangeText={setNavn} placeholder="F.eks. Festival" />
       {feil && <FeilBanner tekst={feil} />}
       <Knapp tittel="Legg til formål" onPress={leggTil} disabled={laster} variant="sekundaer" />
       <View style={stiler.liste}>
-        {kontekster.length === 0 ? (
+        {formaal.length === 0 ? (
           <TomListeTekst tekst="Ingen formål registrert ennå." />
         ) : (
-          kontekster.map((k) => (
-            <Kort key={k.id}>
-              <Text style={stiler.radTittel}>{k.navn}</Text>
-              <Text style={stiler.radUndertekst}>{k.type}</Text>
+          formaal.map((f) => (
+            <Kort key={f.id}>
+              <Text style={stiler.radTittel}>{f.navn}</Text>
             </Kort>
           ))
         )}

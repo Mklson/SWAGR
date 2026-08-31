@@ -72,8 +72,13 @@ export function RapporterScreen() {
     () => lokasjoner.map((l) => ({ verdi: l.id, label: l.navn })),
     [lokasjoner],
   );
+  // Rapportfiltrene handler om kunde - de skjulte system-kontekstene
+  // (varemottak/svinn/internbruk/retur) hører ikke hjemme i en kunde-velger.
   const kontekstAlternativer = useMemo(
-    () => kontekster.map((k) => ({ verdi: k.id, label: k.navn, undertekst: k.type })),
+    () =>
+      kontekster
+        .filter((k) => k.type === "kunde" || k.type === "prosjekt")
+        .map((k) => ({ verdi: k.id, label: k.navn, undertekst: k.type })),
     [kontekster],
   );
   const merkeAlternativer = useMemo(() => merker.map((m) => ({ verdi: m.id, label: m.navn })), [merker]);
@@ -215,7 +220,7 @@ function FleksibelRapport({
     <View style={stiler.seksjon}>
       <SeksjonsTittel>Fleksibel rapport: merke og/eller kunde</SeksjonsTittel>
       <Text style={stiler.hjelpetekst}>
-        Velg kun merke for å se det merket på tvers av alle kunder, kun formål for å se én kunde
+        Velg kun merke for å se det merket på tvers av alle kunder, kun kunde for å se den
         på tvers av alle merker, begge for én kombinasjon, eller ingen for alt.
       </Text>
 
@@ -227,11 +232,11 @@ function FleksibelRapport({
         tomtekst="Alle merker"
       />
       <VelgFelt
-        label="Formål (valgfritt)"
+        label="Kunde (valgfritt)"
         valgt={kontekstId}
         alternativer={kontekstAlternativer}
         onVelg={setKontekstId}
-        tomtekst="Alle formål"
+        tomtekst="Alle kunder"
       />
       <Periodevelger fra={fra} til={til} onFraChange={setFra} onTilChange={setTil} />
 
@@ -341,11 +346,11 @@ function PeriodeRapport({
         tomtekst="Alle lokasjoner"
       />
       <VelgFelt
-        label="Formål (valgfritt)"
+        label="Kunde (valgfritt)"
         valgt={kontekstId}
         alternativer={kontekstAlternativer}
         onVelg={setKontekstId}
-        tomtekst="Alle formål"
+        tomtekst="Alle kunder"
       />
       <Periodevelger fra={fra} til={til} onFraChange={setFra} onTilChange={setTil} />
 
@@ -406,7 +411,7 @@ function KontekstRapport({
   async function hent() {
     setFeil(null);
     if (!kontekstId) {
-      setFeil("Velg et formål.");
+      setFeil("Velg en kunde.");
       return;
     }
     setLaster(true);
@@ -434,12 +439,12 @@ function KontekstRapport({
 
   return (
     <View style={stiler.seksjon}>
-      <SeksjonsTittel>Totalt per variant for ett formål</SeksjonsTittel>
+      <SeksjonsTittel>Totalt per variant for én kunde</SeksjonsTittel>
       <Text style={stiler.hjelpetekst}>
         F.eks. hvor mye som er levert til en gitt kunde, eller brukt på et gitt prosjekt.
       </Text>
 
-      <VelgFelt label="Formål" valgt={kontekstId} alternativer={kontekstAlternativer} onVelg={setKontekstId} />
+      <VelgFelt label="Kunde" valgt={kontekstId} alternativer={kontekstAlternativer} onVelg={setKontekstId} />
       <Periodevelger fra={fra} til={til} onFraChange={setFra} onTilChange={setTil} />
 
       {feil && <FeilBanner tekst={feil} />}
@@ -448,7 +453,7 @@ function KontekstRapport({
       {rader !== null && (
         <View style={stiler.resultatListe}>
           {rader.length === 0 ? (
-            <TomListeTekst tekst="Ingen bevegelser registrert for dette formålet." />
+            <TomListeTekst tekst="Ingen bevegelser registrert for denne kunden." />
           ) : (
             <>
               {(() => {
@@ -521,7 +526,7 @@ function KundeHistorikkSeksjon({
   async function hent() {
     setFeil(null);
     if (!kontekstId) {
-      setFeil("Velg en kunde / et formål.");
+      setFeil("Velg en kunde.");
       return;
     }
     setLaster(true);
@@ -552,13 +557,13 @@ function KundeHistorikkSeksjon({
 
   return (
     <View style={stiler.seksjon}>
-      <SeksjonsTittel>Full historikk for en kunde / et formål</SeksjonsTittel>
+      <SeksjonsTittel>Full historikk for en kunde</SeksjonsTittel>
       <Text style={stiler.hjelpetekst}>
         Hver enkelt bevegelse i rekkefølge — nyeste først. Nyttig for å se nøyaktig hva som har
         skjedd med én kunde, ikke bare summerte tall.
       </Text>
 
-      <VelgFelt label="Formål" valgt={kontekstId} alternativer={kontekstAlternativer} onVelg={setKontekstId} />
+      <VelgFelt label="Kunde" valgt={kontekstId} alternativer={kontekstAlternativer} onVelg={setKontekstId} />
 
       {feil && <FeilBanner tekst={feil} />}
       <Knapp tittel="Hent historikk" onPress={hent} disabled={laster} variant="sekundaer" />
@@ -566,7 +571,7 @@ function KundeHistorikkSeksjon({
       {bevegelser !== null && (
         <View style={stiler.resultatListe}>
           {bevegelser.length === 0 ? (
-            <TomListeTekst tekst="Ingen bevegelser registrert for dette formålet." />
+            <TomListeTekst tekst="Ingen bevegelser registrert for denne kunden." />
           ) : (
             <>
               <Knapp tittel="📊 Eksporter til Excel (CSV)" onPress={eksporter} variant="sekundaer" />

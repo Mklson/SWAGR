@@ -19,6 +19,7 @@ import {
   hentBeholdning,
   kansellerReservasjon,
   listBrukere,
+  listFormaal,
   listKontekster,
   listLokasjoner,
   listMerker,
@@ -36,6 +37,7 @@ import { ALLE_KATEGORIER, MerkeOgKategoriFilter, UTEN_MERKE } from "../component
 import type {
   BeholdningRad,
   Bruker,
+  Formaal,
   Kontekst,
   KontekstType,
   Lokasjon,
@@ -83,15 +85,22 @@ const TYPE_KORT_LABEL: Record<HurtigType, string> = {
   reserver: "Reserver",
 };
 
-// Samme prinsipp som i det tidligere Registrer-skjemaet: styrer hvilke
-// kontekster som er relevante for hver type, så man ikke ved et uhell
-// registrerer en kundeleveranse mot en svinn-kontekst eller omvendt.
-const RELEVANTE_KONTEKST_TYPER: Record<HurtigType, KontekstType[]> = {
-  ut: ["kunde", "prosjekt"],
-  retur: ["retur", "kunde"],
-  svinn: ["svinn"],
-  internbruk: ["internbruk"],
-  reserver: ["kunde", "prosjekt"],
+// Ta ut og Reserver registreres på kunde (valgfritt) + formål (påkrevd).
+// Retur/svinn/internbruk har ingen kunde/formål - de bruker en skjult
+// system-kontekst som backend oppretter automatisk.
+const KREV_FORMAAL: Record<HurtigType, boolean> = {
+  ut: true,
+  reserver: true,
+  retur: false,
+  svinn: false,
+  internbruk: false,
+};
+
+// Uttakstype -> hvilken system-kontekst-type som brukes når det ikke er kunde.
+const SYSTEM_KONTEKST_TYPE: Partial<Record<HurtigType, KontekstType>> = {
+  retur: "retur",
+  svinn: "svinn",
+  internbruk: "internbruk",
 };
 
 interface KurvLinje {
@@ -104,6 +113,7 @@ export function HurtigScreen() {
   const [varianter, setVarianter] = useState<Variant[]>([]);
   const [lokasjoner, setLokasjoner] = useState<Lokasjon[]>([]);
   const [kontekster, setKontekster] = useState<Kontekst[]>([]);
+  const [formaal, setFormaal] = useState<Formaal[]>([]);
   const [brukere, setBrukere] = useState<Bruker[]>([]);
   const [merker, setMerker] = useState<Merke[]>([]);
   const [beholdning, setBeholdning] = useState<BeholdningRad[]>([]);
@@ -113,7 +123,8 @@ export function HurtigScreen() {
   const [fase, setFase] = useState<"oppsett" | "skanning" | "kurv">("oppsett");
   const [type, setType] = useState<HurtigType>("ut");
   const [lokasjonId, setLokasjonId] = useState<string | null>(null);
-  const [kontekstId, setKontekstId] = useState<string | null>(null);
+  const [kundeId, setKundeId] = useState<string | null>(null);
+  const [formaalId, setFormaalId] = useState<string | null>(null);
   const [brukerId, setBrukerId] = useState<string | null>(null);
   const [reservertTilDato, setReservertTilDato] = useState("");
   const [oppsettFeil, setOppsettFeil] = useState<string | null>(null);
@@ -132,11 +143,12 @@ export function HurtigScreen() {
   const lastData = useCallback(async () => {
     setLasterData(true);
     try {
-      const [v, va, l, k, b, m, beh, res] = await Promise.all([
+      const [v, va, l, k, f, b, m, beh, res] = await Promise.all([
         listVarer(),
         listVarianter(),
         listLokasjoner(),
         listKontekster(),
+        listFormaal(),
         listBrukere(),
         listMerker(),
         hentBeholdning(),
@@ -146,6 +158,7 @@ export function HurtigScreen() {
       setVarianter(va);
       setLokasjoner(l);
       setKontekster(k);
+      setFormaal(f);
       setBrukere(b);
       setMerker(m);
       setBeholdning(beh);
@@ -177,16 +190,6 @@ export function HurtigScreen() {
     const sistId = hentLagretVerdi(SISTE_BRUKER_NOKKEL);
     if (sistId && brukere.some((b) => b.id === sistId)) setBrukerId(sistId);
   }, [brukere, brukerId]);
-  // Bytt av type nullstiller et kontekst-valg som ikke lenger passer (men kun
-  // når det faktisk finnes et passende alternativ å falle tilbake på).
-  useEffect(() => {
-    if (!kontekstId) return;
-    const relevante = RELEVANTE_KONTEKST_TYPER[type];
-    const fortsattGyldig = kontekster.some((k) => k.id === kontekstId && relevante.includes(k.type));
-    if (!fortsattGyldig && kontekster.some((k) => relevante.includes(k.type))) setKontekstId(null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [type]);
-
   const vareMap = useMemo(() => new Map(varer.map((v) => [v.id, v])), [varer]);
   const merkeMap = useMemo(() => new Map(merker.map((m) => [m.id, m])), [merker]);
   const variantMap = useMemo(() => new Map(varianter.map((v) => [v.id, v])), [varianter]);
@@ -194,21 +197,36 @@ export function HurtigScreen() {
     () => lokasjoner.map((l) => ({ verdi: l.id, label: l.navn, undertekst: l.type })),
     [lokasjoner],
   );
-  const kontekstAlternativer = useMemo(() => {
-    const relevante = RELEVANTE_KONTEKST_TYPER[type];
-    const filtrert = kontekster.filter((k) => relevante.includes(k.type));
-    const kilde = filtrert.length > 0 ? filtrert : kontekster;
-    return kilde.map((k) => ({ verdi: k.id, label: k.navn, undertekst: k.type }));
-  }, [kontekster, type]);
+  const kundeAlternativer = useMemo(
+    () =>
+      kontekster
+        .filter((k) => k.type === "kunde" || k.type === "prosjekt")
+        .map((k) => ({ verdi: k.id, label: k.navn, undertekst: k.type })),
+    [kontekster],
+  );
+  const formaalAlternativer = useMemo(
+    () => formaal.map((f) => ({ verdi: f.id, label: f.navn })),
+    [formaal],
+  );
   const brukerAlternativer = useMemo(
     () => brukere.map((b) => ({ verdi: b.id, label: b.navn, undertekst: b.rolle })),
     [brukere],
   );
 
+  const krevFormaal = KREV_FORMAAL[type];
+  // Effektiv kontekst: kunde ved ta ut/reserver, ellers system-kontekst for typen.
+  const effektivKontekstId = krevFormaal
+    ? (kundeId ?? undefined)
+    : kontekster.find((k) => k.type === SYSTEM_KONTEKST_TYPE[type])?.id;
+
   function startØkt() {
     setOppsettFeil(null);
-    if (!lokasjonId || !kontekstId || !brukerId) {
-      setOppsettFeil("Velg lokasjon, formål og bruker for å starte.");
+    if (!lokasjonId || !brukerId) {
+      setOppsettFeil("Velg lokasjon og bruker for å starte.");
+      return;
+    }
+    if (krevFormaal && !formaalId) {
+      setOppsettFeil("Velg et formål.");
       return;
     }
     lagreVerdi(SISTE_BRUKER_NOKKEL, brukerId);
@@ -241,7 +259,11 @@ export function HurtigScreen() {
     setKurv([]);
   }
 
-  const kontekstNavn = kontekster.find((k) => k.id === kontekstId)?.navn ?? "?";
+  const kundeNavn = kontekster.find((k) => k.id === kundeId)?.navn;
+  const formaalNavn = formaal.find((f) => f.id === formaalId)?.navn;
+  const oktLabel = krevFormaal
+    ? [formaalNavn, kundeNavn].filter(Boolean).join(" · ") || "Uttak"
+    : TYPE_LABEL[type];
   const lokasjonNavn = lokasjoner.find((l) => l.id === lokasjonId)?.navn ?? "?";
   const brukerNavn = brukere.find((b) => b.id === brukerId)?.navn ?? "?";
 
@@ -310,7 +332,8 @@ export function HurtigScreen() {
           await opprettReservasjon({
             variantId: linje.variantId,
             lokasjonId: lokasjonId!,
-            kontekstId: kontekstId!,
+            ...(effektivKontekstId ? { kontekstId: effektivKontekstId } : {}),
+            ...(formaalId ? { formaalId } : {}),
             brukerId: brukerId!,
             antall: linje.antall,
             ...(reservertTilDato.trim() ? { tilDato: reservertTilDato.trim() } : {}),
@@ -319,7 +342,8 @@ export function HurtigScreen() {
           await opprettBevegelse({
             variantId: linje.variantId,
             lokasjonId: lokasjonId!,
-            kontekstId: kontekstId!,
+            ...(effektivKontekstId ? { kontekstId: effektivKontekstId } : {}),
+            ...(krevFormaal && formaalId ? { formaalId } : {}),
             brukerId: brukerId!,
             type,
             antall: linje.antall,
@@ -381,7 +405,24 @@ export function HurtigScreen() {
         {lokasjoner.length > 1 && (
           <VelgFelt label="Lokasjon" valgt={lokasjonId} alternativer={lokasjonAlternativer} onVelg={setLokasjonId} />
         )}
-        <VelgFelt label="Formål" valgt={kontekstId} alternativer={kontekstAlternativer} onVelg={setKontekstId} />
+        {krevFormaal && (
+          <>
+            <VelgFelt
+              label="Kunde (valgfritt)"
+              valgt={kundeId}
+              alternativer={kundeAlternativer}
+              onVelg={setKundeId}
+              tomtekst="Ingen kunde"
+            />
+            <VelgFelt
+              label="Formål"
+              valgt={formaalId}
+              alternativer={formaalAlternativer}
+              onVelg={setFormaalId}
+              tomtekst={formaal.length === 0 ? "Ingen formål — opprett i Oppsett" : "Velg formål"}
+            />
+          </>
+        )}
         <VelgFelt label="Bruker" valgt={brukerId} alternativer={brukerAlternativer} onVelg={setBrukerId} />
         {type === "reserver" && (
           <TekstFelt
@@ -444,7 +485,7 @@ export function HurtigScreen() {
       <KurvSkjerm
         kurv={kurv}
         type={type}
-        kontekstNavn={kontekstNavn}
+        kontekstNavn={oktLabel}
         vareMap={vareMap}
         variantMap={variantMap}
         merkeMap={merkeMap}
@@ -463,7 +504,7 @@ export function HurtigScreen() {
       <View style={stiler.øktHeader}>
         <View style={stiler.øktInfo}>
           <Text style={stiler.øktTittel}>
-            {TYPE_LABEL[type]} · {kontekstNavn}
+            {oktLabel}
           </Text>
           <Text style={stiler.øktUndertekst}>
             {lokasjonNavn} · {brukerNavn} · {tellerIØkt} fullført

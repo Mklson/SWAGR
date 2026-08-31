@@ -57,6 +57,11 @@ export interface Kontekst {
   referanse: string | null;
 }
 
+export interface Formaal {
+  id: string;
+  navn: string;
+}
+
 export interface Bruker {
   id: string;
   navn: string;
@@ -70,7 +75,8 @@ export interface Bevegelse {
   id: string;
   variantId: string;
   lokasjonId: string;
-  kontekstId: string;
+  kontekstId: string | null;
+  formaalId: string | null;
   brukerId: string;
   type: BevegelseType;
   antall: number;
@@ -92,7 +98,8 @@ export interface Reservasjon {
   id: string;
   variantId: string;
   lokasjonId: string;
-  kontekstId: string;
+  kontekstId: string | null;
+  formaalId: string | null;
   brukerId: string;
   antall: number;
   status: ReservasjonStatus;

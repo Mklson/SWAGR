@@ -199,7 +199,6 @@ function VaremottakSkjema({
 }) {
   const [variantId, setVariantId] = useState<string | null>(null);
   const [lokasjonId, setLokasjonId] = useState<string | null>(null);
-  const [kontekstId, setKontekstId] = useState<string | null>(null);
   const [brukerId, setBrukerId] = useState<string | null>(null);
   const [antall, setAntall] = useState("1");
   const [feil, setFeil] = useState<string | null>(null);
@@ -227,11 +226,11 @@ function VaremottakSkjema({
     () => lokasjoner.map((l) => ({ verdi: l.id, label: l.navn, undertekst: l.type })),
     [lokasjoner],
   );
-  const innkjopKontekstAlternativer = useMemo(() => {
-    const filtrert = kontekster.filter((k) => k.type === "innkjop");
-    const kilde = filtrert.length > 0 ? filtrert : kontekster;
-    return kilde.map((k) => ({ verdi: k.id, label: k.navn, undertekst: k.type }));
-  }, [kontekster]);
+  // Varemottak bruker den skjulte system-kont="innkjop"-konteksten automatisk.
+  const innkjopKontekstId = useMemo(
+    () => kontekster.find((k) => k.type === "innkjop")?.id,
+    [kontekster],
+  );
   const brukerAlternativer = useMemo(
     () => brukere.map((b) => ({ verdi: b.id, label: b.navn, undertekst: b.rolle })),
     [brukere],
@@ -241,8 +240,8 @@ function VaremottakSkjema({
     setFeil(null);
     setSuksess(null);
     const antallTall = Number(antall);
-    if (!variantId || !lokasjonId || !kontekstId || !brukerId) {
-      setFeil("Velg artikkel, lokasjon, formål og bruker.");
+    if (!variantId || !lokasjonId || !brukerId) {
+      setFeil("Velg artikkel, lokasjon og bruker.");
       return;
     }
     if (!Number.isInteger(antallTall) || antallTall <= 0) {
@@ -254,7 +253,7 @@ function VaremottakSkjema({
       await opprettBevegelse({
         variantId,
         lokasjonId,
-        kontekstId,
+        ...(innkjopKontekstId ? { kontekstId: innkjopKontekstId } : {}),
         brukerId,
         type: "inn",
         antall: antallTall,
@@ -289,12 +288,6 @@ function VaremottakSkjema({
         valgt={lokasjonId}
         alternativer={lokasjonAlternativer}
         onVelg={setLokasjonId}
-      />
-      <VelgFelt
-        label="Formål"
-        valgt={kontekstId}
-        alternativer={innkjopKontekstAlternativer}
-        onVelg={setKontekstId}
       />
       <VelgFelt label="Bruker" valgt={brukerId} alternativer={brukerAlternativer} onVelg={setBrukerId} />
       <TekstFelt label="Antall" value={antall} onChangeText={setAntall} keyboardType="numeric" />

@@ -5,6 +5,7 @@ import type {
   Bevegelse,
   BevegelseType,
   Bruker,
+  Formaal,
   Kontekst,
   KontekstType,
   Leverandor,
@@ -151,6 +152,9 @@ export const listKontekster = () => list<Kontekst>("/api/kontekster");
 export const opprettKontekst = (data: { type: KontekstType; navn: string; referanse?: string }) =>
   create<Kontekst>("/api/kontekster", data);
 
+export const listFormaal = () => list<Formaal>("/api/formaal");
+export const opprettFormaal = (data: { navn: string }) => create<Formaal>("/api/formaal", data);
+
 export const listBrukere = () => list<Bruker>("/api/brukere");
 export const opprettBruker = (data: { navn: string; rolle: string }) =>
   create<Bruker>("/api/brukere", data);
@@ -160,7 +164,8 @@ export const listBevegelser = (query?: { variantId?: string; lokasjonId?: string
 export const opprettBevegelse = (data: {
   variantId: string;
   lokasjonId: string;
-  kontekstId: string;
+  kontekstId?: string;
+  formaalId?: string;
   brukerId: string;
   type: BevegelseType;
   antall: number;
@@ -173,7 +178,8 @@ export const listReservasjoner = (status?: ReservasjonStatus) =>
 export const opprettReservasjon = (data: {
   variantId: string;
   lokasjonId: string;
-  kontekstId: string;
+  kontekstId?: string;
+  formaalId?: string;
   brukerId: string;
   antall: number;
   tilDato?: string;
