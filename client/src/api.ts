@@ -120,6 +120,10 @@ export const opprettLeverandor = (data: { navn: string }) =>
 export const listVarer = () => list<Vare>("/api/varer");
 export const opprettVare = (data: { navn: string; kategori: string; leverandorId: string }) =>
   create<Vare>("/api/varer", data);
+export const oppdaterVare = (
+  id: string,
+  data: Partial<{ navn: string; kategori: string; leverandorId: string }>,
+) => patch<Vare>(`/api/varer/${id}`, data);
 
 export const listVarianter = () => list<Variant>("/api/varianter");
 export const opprettVariant = (data: {

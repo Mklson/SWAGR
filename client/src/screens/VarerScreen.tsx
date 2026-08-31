@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { taBilde, type KomprimertBilde } from "../lib/bilde";
 import { hentLagretBruker } from "../lib/auth";
+import { BildeVelger } from "../components/BildeVelger";
+import { KATEGORI_ALTERNATIVER } from "../lib/kategorier";
 import {
   ApiFeil,
   gjenkjennVariant,
@@ -14,12 +16,13 @@ import {
   listMerker,
   listVarer,
   listVarianter,
+  oppdaterVare,
   oppdaterVariant,
   opprettBevegelse,
   opprettVare,
   opprettVariant,
 } from "../api";
-import { krTilOre, oreTilKrTekst, formatterKroner } from "../lib/valuta";
+import { krTilOre, oreTilKrTekst } from "../lib/valuta";
 import type {
   Bevegelse,
   Bruker,
@@ -37,19 +40,28 @@ import {
   Knapp,
   Kort,
   Miniatyr,
-  SeksjonsTittel,
+  Sammenleggbar,
   TekstFelt,
-  TomListeTekst,
   VelgFelt,
 } from "../components/ui";
 
-function erGyldigUrl(verdi: string): boolean {
-  try {
-    new URL(verdi);
-    return true;
-  } catch {
-    return false;
-  }
+type MerkeAlternativ = { verdi: string; label: string; bilde?: string | null };
+
+// Lager en lesbar SKU-stamme av artikkelnavnet: "Vinglass Rød" -> "VINGLASS-ROD".
+function lagSkuBase(navn: string): string {
+  const rens = navn
+    .trim()
+    .toUpperCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/[^A-Z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 14);
+  return rens || "ART";
+}
+
+function tilfeldigSuffiks(): string {
+  return Math.random().toString(36).slice(2, 6).toUpperCase();
 }
 
 export function VarerScreen() {
@@ -61,34 +73,8 @@ export function VarerScreen() {
   const [kontekster, setKontekster] = useState<Kontekst[]>([]);
   const [brukere, setBrukere] = useState<Bruker[]>([]);
   const [innBevegelser, setInnBevegelser] = useState<Bevegelse[]>([]);
-
-  const [vareNavn, setVareNavn] = useState("");
-  const [vareKategori, setVareKategori] = useState("");
-  const [vareLeverandorId, setVareLeverandorId] = useState<string | null>(null);
-  const [vareFeil, setVareFeil] = useState<string | null>(null);
-  const [vareLaster, setVareLaster] = useState(false);
-
-  const [variantVareId, setVariantVareId] = useState<string | null>(null);
-  const [variantSku, setVariantSku] = useState("");
-  const [variantMerkeId, setVariantMerkeId] = useState<string | null>(null);
-  const [variantVerdi, setVariantVerdi] = useState("");
-  const [variantBildeurl, setVariantBildeurl] = useState("");
-  const [variantBildeLaster, setVariantBildeLaster] = useState(false);
-  const [variantFeil, setVariantFeil] = useState<string | null>(null);
-  const [variantLaster, setVariantLaster] = useState(false);
-
-  const [mottakVariantId, setMottakVariantId] = useState<string | null>(null);
-  const [mottakLokasjonId, setMottakLokasjonId] = useState<string | null>(null);
-  const [mottakKontekstId, setMottakKontekstId] = useState<string | null>(null);
-  const [mottakBrukerId, setMottakBrukerId] = useState<string | null>(null);
-  const [mottakAntall, setMottakAntall] = useState("1");
-  const [mottakFeil, setMottakFeil] = useState<string | null>(null);
-  const [mottakSuksess, setMottakSuksess] = useState<string | null>(null);
-  const [mottakLaster, setMottakLaster] = useState(false);
-
-  const [redigerVariant, setRedigerVariant] = useState<Variant | null>(null);
   const [listeFeil, setListeFeil] = useState<string | null>(null);
-  const [kameraFormaal, setKameraFormaal] = useState<"mottak" | "ny" | null>(null);
+  const [apen, setApen] = useState<"varemottak" | "ny" | "rediger" | null>("ny");
 
   const lastInn = useCallback(async () => {
     try {
@@ -111,7 +97,7 @@ export function VarerScreen() {
       setBrukere(b);
       setInnBevegelser(bev.filter((x) => x.type === "inn").slice(0, 10));
     } catch {
-      setListeFeil("Kunne ikke hente varer. Sjekk at backend kjører.");
+      setListeFeil("Kunne ikke hente data. Sjekk at backend kjører.");
     }
   }, []);
 
@@ -119,29 +105,119 @@ export function VarerScreen() {
     lastInn();
   }, [lastInn]);
 
-  // Forhåndsvelg innlogget bruker som mottaker av varemottak (kan overstyres).
-  useEffect(() => {
-    if (mottakBrukerId || brukere.length === 0) return;
-    const innlogget = hentLagretBruker();
-    if (innlogget && brukere.some((b) => b.id === innlogget.id)) setMottakBrukerId(innlogget.id);
-  }, [brukere, mottakBrukerId]);
+  function toggle(seksjon: "varemottak" | "ny" | "rediger") {
+    setApen((n) => (n === seksjon ? null : seksjon));
+  }
 
-  const leverandorAlternativer = useMemo(
-    () => leverandorer.map((l) => ({ verdi: l.id, label: l.navn })),
-    [leverandorer],
-  );
-  const vareAlternativer = useMemo(() => varer.map((v) => ({ verdi: v.id, label: v.navn })), [varer]);
-  const vareMap = useMemo(() => new Map(varer.map((v) => [v.id, v])), [varer]);
-  const merkeMap = useMemo(() => new Map(merker.map((m) => [m.id, m])), [merker]);
-  const merkeAlternativer = useMemo(
+  const merkeAlternativer = useMemo<MerkeAlternativ[]>(
     () => merker.map((m) => ({ verdi: m.id, label: m.navn, bilde: m.logoUrl })),
     [merker],
   );
-  const eksisterendeVariantAlternativer = useMemo(
+
+  return (
+    <ScrollView
+      style={stiler.rot}
+      contentContainerStyle={stiler.scrollInnhold}
+      keyboardShouldPersistTaps="handled"
+    >
+      <Text style={stiler.tittel}>Artikkelstyring</Text>
+      <Text style={stiler.undertekst}>
+        Ta imot varemottak, opprett nye artikler, eller rediger eksisterende.
+      </Text>
+
+      {listeFeil && <FeilBanner tekst={listeFeil} />}
+
+      <Sammenleggbar
+        tittel="Registrer varemottak"
+        undertekst="Antall inn på lager for en artikkel som finnes"
+        apen={apen === "varemottak"}
+        onToggle={() => toggle("varemottak")}
+      >
+        <VaremottakSkjema
+          varer={varer}
+          varianter={varianter}
+          lokasjoner={lokasjoner}
+          kontekster={kontekster}
+          brukere={brukere}
+          innBevegelser={innBevegelser}
+          onRegistrert={lastInn}
+        />
+      </Sammenleggbar>
+
+      <Sammenleggbar
+        tittel="Ny artikkel"
+        undertekst="Navn, kategori, leverandør, pris og bilde i ett steg"
+        apen={apen === "ny"}
+        onToggle={() => toggle("ny")}
+      >
+        <NyArtikkelSkjema
+          leverandorer={leverandorer}
+          merkeAlternativer={merkeAlternativer}
+          onOpprettet={lastInn}
+        />
+      </Sammenleggbar>
+
+      <Sammenleggbar
+        tittel="Rediger artikkel"
+        undertekst="Endre en eksisterende artikkel, eller legg til varianter"
+        apen={apen === "rediger"}
+        onToggle={() => toggle("rediger")}
+      >
+        <RedigerArtikkelSkjema
+          varer={varer}
+          varianter={varianter}
+          leverandorer={leverandorer}
+          merkeAlternativer={merkeAlternativer}
+          onLagret={lastInn}
+        />
+      </Sammenleggbar>
+    </ScrollView>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Registrer varemottak
+// ---------------------------------------------------------------------------
+
+function VaremottakSkjema({
+  varer,
+  varianter,
+  lokasjoner,
+  kontekster,
+  brukere,
+  innBevegelser,
+  onRegistrert,
+}: {
+  varer: Vare[];
+  varianter: Variant[];
+  lokasjoner: Lokasjon[];
+  kontekster: Kontekst[];
+  brukere: Bruker[];
+  innBevegelser: Bevegelse[];
+  onRegistrert: () => Promise<void>;
+}) {
+  const [variantId, setVariantId] = useState<string | null>(null);
+  const [lokasjonId, setLokasjonId] = useState<string | null>(null);
+  const [kontekstId, setKontekstId] = useState<string | null>(null);
+  const [brukerId, setBrukerId] = useState<string | null>(null);
+  const [antall, setAntall] = useState("1");
+  const [feil, setFeil] = useState<string | null>(null);
+  const [suksess, setSuksess] = useState<string | null>(null);
+  const [laster, setLaster] = useState(false);
+  const [kamera, setKamera] = useState(false);
+
+  useEffect(() => {
+    if (brukerId || brukere.length === 0) return;
+    const innlogget = hentLagretBruker();
+    if (innlogget && brukere.some((b) => b.id === innlogget.id)) setBrukerId(innlogget.id);
+  }, [brukere, brukerId]);
+
+  const vareMap = useMemo(() => new Map(varer.map((v) => [v.id, v])), [varer]);
+  const variantAlternativer = useMemo(
     () =>
       varianter.map((v) => ({
         verdi: v.id,
-        label: `${vareMap.get(v.vareId)?.navn ?? "Ukjent vare"} — ${v.sku}`,
+        label: `${vareMap.get(v.vareId)?.navn ?? "Ukjent"} — ${v.sku}`,
         bilde: v.bildeurl,
       })),
     [varianter, vareMap],
@@ -150,8 +226,6 @@ export function VarerScreen() {
     () => lokasjoner.map((l) => ({ verdi: l.id, label: l.navn, undertekst: l.type })),
     [lokasjoner],
   );
-  // Kun innkjøp-kontekster er relevante ved varemottak - samme prinsipp brukt
-  // i Ta ut/Retur og det gamle Registrer-skjemaet.
   const innkjopKontekstAlternativer = useMemo(() => {
     const filtrert = kontekster.filter((k) => k.type === "innkjop");
     const kilde = filtrert.length > 0 ? filtrert : kontekster;
@@ -162,166 +236,80 @@ export function VarerScreen() {
     [brukere],
   );
 
-  async function registrerVaremottak() {
-    setMottakFeil(null);
-    setMottakSuksess(null);
-    const antallTall = Number(mottakAntall);
-    if (!mottakVariantId || !mottakLokasjonId || !mottakKontekstId || !mottakBrukerId) {
-      setMottakFeil("Velg vare, lokasjon, formål og bruker.");
+  async function registrer() {
+    setFeil(null);
+    setSuksess(null);
+    const antallTall = Number(antall);
+    if (!variantId || !lokasjonId || !kontekstId || !brukerId) {
+      setFeil("Velg artikkel, lokasjon, formål og bruker.");
       return;
     }
     if (!Number.isInteger(antallTall) || antallTall <= 0) {
-      setMottakFeil("Antall må være et positivt heltall.");
+      setFeil("Antall må være et positivt heltall.");
       return;
     }
-
-    setMottakLaster(true);
+    setLaster(true);
     try {
       await opprettBevegelse({
-        variantId: mottakVariantId,
-        lokasjonId: mottakLokasjonId,
-        kontekstId: mottakKontekstId,
-        brukerId: mottakBrukerId,
+        variantId,
+        lokasjonId,
+        kontekstId,
+        brukerId,
         type: "inn",
         antall: antallTall,
       });
-      setMottakSuksess("Varemottak registrert.");
-      setMottakAntall("1");
-      await lastInn();
+      setSuksess("Varemottak registrert.");
+      setAntall("1");
+      await onRegistrert();
     } catch (err) {
-      setMottakFeil(err instanceof ApiFeil ? err.message : "Kunne ikke registrere varemottaket.");
+      setFeil(err instanceof ApiFeil ? err.message : "Kunne ikke registrere varemottaket.");
     } finally {
-      setMottakLaster(false);
+      setLaster(false);
     }
   }
 
-  async function leggTilVare() {
-    setVareFeil(null);
-    if (!vareNavn.trim() || !vareKategori.trim() || !vareLeverandorId) {
-      setVareFeil("Fyll ut navn, kategori og leverandør.");
-      return;
-    }
-    setVareLaster(true);
-    try {
-      await opprettVare({ navn: vareNavn.trim(), kategori: vareKategori.trim(), leverandorId: vareLeverandorId });
-      setVareNavn("");
-      setVareKategori("");
-      await lastInn();
-    } catch (err) {
-      setVareFeil(err instanceof ApiFeil ? err.message : "Kunne ikke opprette vare.");
-    } finally {
-      setVareLaster(false);
-    }
-  }
-
-  async function leggTilVariant() {
-    setVariantFeil(null);
-    if (!variantVareId || !variantSku.trim()) {
-      setVariantFeil("Velg vare og fyll ut SKU.");
-      return;
-    }
-    const bildeurl = variantBildeurl.trim();
-    if (bildeurl && !erGyldigUrl(bildeurl)) {
-      setVariantFeil("Bilde-URL må være en gyldig lenke (https://...).");
-      return;
-    }
-    const verdiOre = variantVerdi.trim() ? krTilOre(variantVerdi) : null;
-    if (variantVerdi.trim() && verdiOre === null) {
-      setVariantFeil("Verdi må være et gyldig beløp, f.eks. 149,00.");
-      return;
-    }
-
-    setVariantLaster(true);
-    try {
-      await opprettVariant({
-        vareId: variantVareId,
-        sku: variantSku.trim(),
-        ...(variantMerkeId ? { merkeId: variantMerkeId } : {}),
-        ...(verdiOre !== null ? { verdiOre } : {}),
-        ...(bildeurl ? { bildeurl } : {}),
-      });
-      setVariantSku("");
-      setVariantMerkeId(null);
-      setVariantVerdi("");
-      setVariantBildeurl("");
-      await lastInn();
-    } catch (err) {
-      setVariantFeil(err instanceof ApiFeil ? err.message : "Kunne ikke opprette variant.");
-    } finally {
-      setVariantLaster(false);
-    }
-  }
-
-  async function taVariantbilde() {
-    setVariantFeil(null);
-    setVariantBildeLaster(true);
-    try {
-      const bilde = await taBilde();
-      if (!bilde) return;
-      const { url } = await lastOppBilde(bilde.base64);
-      setVariantBildeurl(url);
-    } catch (err) {
-      setVariantFeil(
-        err instanceof Error ? `Bildet feilet: ${err.message}` : "Kunne ikke laste opp bildet. Prøv igjen.",
-      );
-    } finally {
-      setVariantBildeLaster(false);
-    }
-  }
-
-  function innBevegelseNavn(b: Bevegelse) {
+  function bevegelseNavn(b: Bevegelse) {
     const variant = varianter.find((v) => v.id === b.variantId);
-    const vareNavn = variant ? vareMap.get(variant.vareId)?.navn : undefined;
-    return `${vareNavn ?? "Ukjent vare"} — ${variant?.sku ?? "?"}`;
+    const navn = variant ? vareMap.get(variant.vareId)?.navn : undefined;
+    return `${navn ?? "Ukjent"} — ${variant?.sku ?? "?"}`;
   }
 
   return (
-    <ScrollView style={stiler.rot} contentContainerStyle={stiler.scrollInnhold}>
-      <Text style={stiler.tittel}>Artikkelstyring</Text>
-      <Text style={stiler.undertekst}>
-        Ta imot varemottak for kjente artikler, eller registrer helt nye.
-      </Text>
-
-      {listeFeil && <FeilBanner tekst={listeFeil} />}
-
-      <SeksjonsTittel>Registrer varemottak</SeksjonsTittel>
-      <Text style={stiler.hjelpetekst}>For en artikkel som allerede finnes — antall som kommer inn på lager.</Text>
-      <View style={stiler.skjema}>
-        <VelgFelt
-          label="Vare/variant"
-          valgt={mottakVariantId}
-          alternativer={eksisterendeVariantAlternativer}
-          onVelg={setMottakVariantId}
-          tomtekst={varianter.length === 0 ? "Ingen varianter — opprett en under først" : "Velg vare"}
-        />
-        <VelgFelt
-          label="Lokasjon"
-          valgt={mottakLokasjonId}
-          alternativer={lokasjonAlternativer}
-          onVelg={setMottakLokasjonId}
-        />
-        <VelgFelt
-          label="Formål"
-          valgt={mottakKontekstId}
-          alternativer={innkjopKontekstAlternativer}
-          onVelg={setMottakKontekstId}
-        />
-        <VelgFelt label="Bruker" valgt={mottakBrukerId} alternativer={brukerAlternativer} onVelg={setMottakBrukerId} />
-        <TekstFelt label="Antall" value={mottakAntall} onChangeText={setMottakAntall} keyboardType="numeric" />
-        <Pressable style={stiler.kameraKnapp} onPress={() => setKameraFormaal("mottak")}>
-          <Text style={stiler.kameraKnappTekst}>📷 Finner du ikke varen? Ta bilde</Text>
-        </Pressable>
-        {mottakFeil && <FeilBanner tekst={mottakFeil} />}
-        {mottakSuksess && <Text style={stiler.suksessTekst}>{mottakSuksess}</Text>}
-        <Knapp tittel="Registrer varemottak" onPress={registrerVaremottak} disabled={mottakLaster} />
-      </View>
+    <View style={stiler.skjema}>
+      <VelgFelt
+        label="Artikkel"
+        valgt={variantId}
+        alternativer={variantAlternativer}
+        onVelg={setVariantId}
+        tomtekst={varianter.length === 0 ? "Ingen artikler ennå — opprett en først" : "Velg artikkel"}
+      />
+      <VelgFelt
+        label="Lokasjon"
+        valgt={lokasjonId}
+        alternativer={lokasjonAlternativer}
+        onVelg={setLokasjonId}
+      />
+      <VelgFelt
+        label="Formål"
+        valgt={kontekstId}
+        alternativer={innkjopKontekstAlternativer}
+        onVelg={setKontekstId}
+      />
+      <VelgFelt label="Bruker" valgt={brukerId} alternativer={brukerAlternativer} onVelg={setBrukerId} />
+      <TekstFelt label="Antall" value={antall} onChangeText={setAntall} keyboardType="numeric" />
+      <Pressable style={stiler.kameraKnapp} onPress={() => setKamera(true)}>
+        <Text style={stiler.kameraKnappTekst}>📷 Finner du ikke artikkelen? Ta bilde</Text>
+      </Pressable>
+      {feil && <FeilBanner tekst={feil} />}
+      {suksess && <Text style={stiler.suksessTekst}>{suksess}</Text>}
+      <Knapp tittel="Registrer varemottak" onPress={registrer} disabled={laster} />
 
       {innBevegelser.length > 0 && (
         <View style={stiler.liste}>
           <Text style={stiler.hjelpetekst}>Siste varemottak</Text>
           {innBevegelser.map((b) => (
             <Kort key={b.id}>
-              <Text style={stiler.radTittel}>{innBevegelseNavn(b)}</Text>
+              <Text style={stiler.radTittel}>{bevegelseNavn(b)}</Text>
               <Text style={stiler.radUndertekst}>
                 {b.antall} stk · {new Date(b.tidspunkt).toLocaleDateString("nb-NO")}
               </Text>
@@ -330,149 +318,508 @@ export function VarerScreen() {
         </View>
       )}
 
-      <SeksjonsTittel>Ny vare</SeksjonsTittel>
-      <Pressable style={stiler.kameraKnapp} onPress={() => setKameraFormaal("ny")}>
-        <Text style={stiler.kameraKnappTekst}>📷 Ta bilde for forslag til navn/SKU</Text>
-      </Pressable>
-      <View style={stiler.skjema}>
-        <TekstFelt label="Navn" value={vareNavn} onChangeText={setVareNavn} placeholder="F.eks. Kaffekopp" />
-        <TekstFelt
-          label="Kategori"
-          value={vareKategori}
-          onChangeText={setVareKategori}
-          placeholder="F.eks. Servise"
-        />
-        <VelgFelt
-          label="Leverandør"
-          valgt={vareLeverandorId}
-          alternativer={leverandorAlternativer}
-          onVelg={setVareLeverandorId}
-          tomtekst={leverandorer.length === 0 ? "Ingen leverandører — opprett en i Oppsett" : "Velg leverandør"}
-        />
-        {vareFeil && <FeilBanner tekst={vareFeil} />}
-        <Knapp tittel="Legg til vare" onPress={leggTilVare} disabled={vareLaster} variant="sekundaer" />
-      </View>
-
-      <View style={stiler.liste}>
-        {varer.length === 0 ? (
-          <TomListeTekst tekst="Ingen varer registrert ennå." />
-        ) : (
-          varer.map((v) => (
-            <Kort key={v.id}>
-              <Text style={stiler.radTittel}>{v.navn}</Text>
-              <Text style={stiler.radUndertekst}>{v.kategori}</Text>
-            </Kort>
-          ))
-        )}
-      </View>
-
-      <SeksjonsTittel>Ny variant</SeksjonsTittel>
-      <View style={stiler.skjema}>
-        <VelgFelt
-          label="Vare"
-          valgt={variantVareId}
-          alternativer={vareAlternativer}
-          onVelg={setVariantVareId}
-          tomtekst={varer.length === 0 ? "Ingen varer — opprett en over først" : "Velg vare"}
-        />
-        <TekstFelt label="SKU" value={variantSku} onChangeText={setVariantSku} placeholder="F.eks. KOPP-RED-01" />
-        <VelgFelt
-          label="Merke (valgfritt)"
-          valgt={variantMerkeId}
-          alternativer={merkeAlternativer}
-          onVelg={setVariantMerkeId}
-          tomtekst={merker.length === 0 ? "Ingen merker — opprett ett i Oppsett" : "Velg merke"}
-        />
-        <TekstFelt
-          label="Verdi per enhet, kr (valgfritt)"
-          value={variantVerdi}
-          onChangeText={setVariantVerdi}
-          placeholder="F.eks. 149,00"
-          keyboardType="numeric"
-        />
-        <View style={stiler.bildeRad}>
-          <View style={stiler.bildeRadKnapp}>
-            <Knapp
-              tittel={variantBildeurl ? "📷 Ta nytt bilde" : "📷 Ta bilde av varen"}
-              onPress={taVariantbilde}
-              disabled={variantBildeLaster}
-              variant="sekundaer"
-            />
-          </View>
-          {variantBildeurl ? <Miniatyr url={variantBildeurl} storrelse={48} /> : null}
-        </View>
-        <TekstFelt
-          label="Bilde-URL (fylles av kamera, kan også limes inn)"
-          value={variantBildeurl}
-          onChangeText={setVariantBildeurl}
-          placeholder="https://..."
-        />
-        {variantFeil && <FeilBanner tekst={variantFeil} />}
-        <Knapp tittel="Legg til variant" onPress={leggTilVariant} disabled={variantLaster} variant="sekundaer" />
-      </View>
-
-      <View style={stiler.liste}>
-        {varianter.length === 0 ? (
-          <TomListeTekst tekst="Ingen varianter registrert ennå." />
-        ) : (
-          varianter.map((v) => {
-            const merke = v.merkeId ? merkeMap.get(v.merkeId) : null;
-            return (
-              <Pressable key={v.id} onPress={() => setRedigerVariant(v)}>
-                <Kort>
-                  <View style={stiler.variantRad}>
-                    <Miniatyr url={v.bildeurl} bokstav={vareMap.get(v.vareId)?.navn ?? v.sku} />
-                    <View style={stiler.variantTekst}>
-                      <Text style={stiler.radTittel}>{vareMap.get(v.vareId)?.navn ?? "Ukjent vare"}</Text>
-                      <Text style={stiler.radUndertekst}>
-                        SKU: {v.sku} · {formatterKroner(v.verdiOre)}
-                      </Text>
-                    </View>
-                    {merke && (
-                      <View style={stiler.merkeBadge}>
-                        <Text style={stiler.merkeBadgeTekst}>{merke.navn}</Text>
-                      </View>
-                    )}
-                  </View>
-                </Kort>
-              </Pressable>
-            );
-          })
-        )}
-      </View>
-
-      {redigerVariant && (
-        <RedigerVariantModal
-          variant={redigerVariant}
-          vareNavn={vareMap.get(redigerVariant.vareId)?.navn ?? redigerVariant.sku}
-          merkeAlternativer={merkeAlternativer}
-          onLukk={() => setRedigerVariant(null)}
-          onLagret={async () => {
-            setRedigerVariant(null);
-            await lastInn();
-          }}
-        />
-      )}
-
-      {kameraFormaal && (
+      {kamera && (
         <VareKameraModal
-          formaal={kameraFormaal}
-          onLukk={() => setKameraFormaal(null)}
-          onFunnetEksisterende={(variantId) => {
-            setMottakVariantId(variantId);
-            setKameraFormaal(null);
+          formaal="mottak"
+          onLukk={() => setKamera(false)}
+          onFunnetEksisterende={(id) => {
+            setVariantId(id);
+            setKamera(false);
           }}
-          onForslagNyArtikkel={(resultat, bildeUrl) => {
-            setVareNavn(resultat.varetype);
-            if (resultat.synligSku) setVariantSku(resultat.synligSku);
-            if (bildeUrl) setVariantBildeurl(bildeUrl);
-            setKameraFormaal(null);
-          }}
+          onForslagNyArtikkel={() => setKamera(false)}
         />
       )}
-    </ScrollView>
+    </View>
   );
 }
+
+// ---------------------------------------------------------------------------
+// Ny artikkel (vare + første variant i ett)
+// ---------------------------------------------------------------------------
+
+function NyArtikkelSkjema({
+  leverandorer,
+  merkeAlternativer,
+  onOpprettet,
+}: {
+  leverandorer: Leverandor[];
+  merkeAlternativer: MerkeAlternativ[];
+  onOpprettet: () => Promise<void>;
+}) {
+  const [navn, setNavn] = useState("");
+  const [kategori, setKategori] = useState<string | null>(null);
+  const [leverandorId, setLeverandorId] = useState<string | null>(null);
+  const [pris, setPris] = useState("");
+  const [merkeId, setMerkeId] = useState<string | null>(null);
+  const [sku, setSku] = useState("");
+  const [skuRort, setSkuRort] = useState(false);
+  const [bildeurl, setBildeurl] = useState("");
+  const [bildeLaster, setBildeLaster] = useState(false);
+  const [feil, setFeil] = useState<string | null>(null);
+  const [suksess, setSuksess] = useState<string | null>(null);
+  const [laster, setLaster] = useState(false);
+  const [kamera, setKamera] = useState(false);
+  const suffiks = useRef(tilfeldigSuffiks()).current;
+
+  useEffect(() => {
+    if (!skuRort) setSku(navn.trim() ? `${lagSkuBase(navn)}-${suffiks}` : "");
+  }, [navn, skuRort, suffiks]);
+
+  const leverandorAlternativer = useMemo(
+    () => leverandorer.map((l) => ({ verdi: l.id, label: l.navn })),
+    [leverandorer],
+  );
+
+  async function bildeValgt(bilde: KomprimertBilde) {
+    setBildeLaster(true);
+    try {
+      const { url } = await lastOppBilde(bilde.base64);
+      setBildeurl(url);
+    } catch (err) {
+      setFeil(err instanceof Error ? `Bildet feilet: ${err.message}` : "Kunne ikke laste opp bildet.");
+    } finally {
+      setBildeLaster(false);
+    }
+  }
+
+  async function opprett() {
+    setFeil(null);
+    setSuksess(null);
+    if (!navn.trim() || !kategori || !leverandorId) {
+      setFeil("Fyll ut navn, kategori og leverandør.");
+      return;
+    }
+    if (!sku.trim()) {
+      setFeil("SKU kan ikke være tom.");
+      return;
+    }
+    const verdiOre = pris.trim() ? krTilOre(pris) : null;
+    if (pris.trim() && verdiOre === null) {
+      setFeil("Pris må være et gyldig beløp, f.eks. 149,00.");
+      return;
+    }
+    setLaster(true);
+    try {
+      const vare = await opprettVare({ navn: navn.trim(), kategori, leverandorId });
+      await opprettVariant({
+        vareId: vare.id,
+        sku: sku.trim(),
+        ...(merkeId ? { merkeId } : {}),
+        ...(verdiOre !== null ? { verdiOre } : {}),
+        ...(bildeurl ? { bildeurl } : {}),
+      });
+      setSuksess(`«${vare.navn}» opprettet.`);
+      setNavn("");
+      setKategori(null);
+      setPris("");
+      setMerkeId(null);
+      setSku("");
+      setSkuRort(false);
+      setBildeurl("");
+      await onOpprettet();
+    } catch (err) {
+      setFeil(err instanceof ApiFeil ? err.message : "Kunne ikke opprette artikkelen.");
+    } finally {
+      setLaster(false);
+    }
+  }
+
+  return (
+    <View style={stiler.skjema}>
+      <Pressable style={stiler.kameraKnapp} onPress={() => setKamera(true)}>
+        <Text style={stiler.kameraKnappTekst}>🔍 Ta bilde for forslag til navn og bilde</Text>
+      </Pressable>
+      <TekstFelt label="Navn" value={navn} onChangeText={setNavn} placeholder="F.eks. Vinglass" />
+      <VelgFelt
+        label="Kategori"
+        valgt={kategori}
+        alternativer={KATEGORI_ALTERNATIVER}
+        onVelg={setKategori}
+        tomtekst="Velg kategori"
+      />
+      <VelgFelt
+        label="Leverandør"
+        valgt={leverandorId}
+        alternativer={leverandorAlternativer}
+        onVelg={setLeverandorId}
+        tomtekst={
+          leverandorer.length === 0 ? "Ingen leverandører — opprett i Oppsett" : "Velg leverandør"
+        }
+      />
+      <TekstFelt
+        label="Pris per enhet, kr (valgfritt)"
+        value={pris}
+        onChangeText={setPris}
+        keyboardType="numeric"
+        placeholder="F.eks. 149,00"
+      />
+      <VelgFelt
+        label="Merke (valgfritt)"
+        valgt={merkeId}
+        alternativer={merkeAlternativer}
+        onVelg={setMerkeId}
+        tomtekst={merkeAlternativer.length === 0 ? "Ingen merker — opprett i Oppsett" : "Velg merke"}
+      />
+      <TekstFelt
+        label="SKU (autogenerert — kan endres)"
+        value={sku}
+        onChangeText={(t) => {
+          setSku(t);
+          setSkuRort(true);
+        }}
+      />
+      <BildeVelger laster={bildeLaster} onValgt={bildeValgt} onFeil={setFeil} />
+      {bildeurl ? <Miniatyr url={bildeurl} storrelse={64} /> : null}
+      {feil && <FeilBanner tekst={feil} />}
+      {suksess && <Text style={stiler.suksessTekst}>{suksess}</Text>}
+      <Knapp tittel="Opprett artikkel" onPress={opprett} disabled={laster} />
+
+      {kamera && (
+        <VareKameraModal
+          formaal="ny"
+          onLukk={() => setKamera(false)}
+          onFunnetEksisterende={() => setKamera(false)}
+          onForslagNyArtikkel={(resultat, bildeUrl) => {
+            setNavn(resultat.varetype);
+            if (resultat.synligSku) {
+              setSku(resultat.synligSku);
+              setSkuRort(true);
+            }
+            if (bildeUrl) setBildeurl(bildeUrl);
+            setKamera(false);
+          }}
+        />
+      )}
+    </View>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Rediger artikkel
+// ---------------------------------------------------------------------------
+
+function RedigerArtikkelSkjema({
+  varer,
+  varianter,
+  leverandorer,
+  merkeAlternativer,
+  onLagret,
+}: {
+  varer: Vare[];
+  varianter: Variant[];
+  leverandorer: Leverandor[];
+  merkeAlternativer: MerkeAlternativ[];
+  onLagret: () => Promise<void>;
+}) {
+  const [valgtVareId, setValgtVareId] = useState<string | null>(null);
+  const vare = varer.find((v) => v.id === valgtVareId) ?? null;
+
+  const vareAlternativer = useMemo(
+    () => varer.map((v) => ({ verdi: v.id, label: `${v.navn} · ${v.kategori}` })),
+    [varer],
+  );
+
+  return (
+    <View style={stiler.skjema}>
+      <VelgFelt
+        label="Velg artikkel"
+        valgt={valgtVareId}
+        alternativer={vareAlternativer}
+        onVelg={setValgtVareId}
+        tomtekst={varer.length === 0 ? "Ingen artikler ennå" : "Velg artikkel"}
+      />
+      {vare && (
+        <ArtikkelRedigering
+          key={vare.id}
+          vare={vare}
+          varianter={varianter.filter((v) => v.vareId === vare.id)}
+          leverandorer={leverandorer}
+          merkeAlternativer={merkeAlternativer}
+          onLagret={onLagret}
+        />
+      )}
+    </View>
+  );
+}
+
+function ArtikkelRedigering({
+  vare,
+  varianter,
+  leverandorer,
+  merkeAlternativer,
+  onLagret,
+}: {
+  vare: Vare;
+  varianter: Variant[];
+  leverandorer: Leverandor[];
+  merkeAlternativer: MerkeAlternativ[];
+  onLagret: () => Promise<void>;
+}) {
+  const [navn, setNavn] = useState(vare.navn);
+  const [kategori, setKategori] = useState<string | null>(vare.kategori);
+  const [leverandorId, setLeverandorId] = useState<string | null>(vare.leverandorId);
+  const [feil, setFeil] = useState<string | null>(null);
+  const [suksess, setSuksess] = useState<string | null>(null);
+  const [laster, setLaster] = useState(false);
+  const [leggerTil, setLeggerTil] = useState(false);
+
+  const leverandorAlternativer = useMemo(
+    () => leverandorer.map((l) => ({ verdi: l.id, label: l.navn })),
+    [leverandorer],
+  );
+  // Eldre data kan ha en kategori utenfor den faste lista - vis den likevel.
+  const kategoriAlternativer = useMemo(() => {
+    if (KATEGORI_ALTERNATIVER.some((k) => k.verdi === vare.kategori)) return KATEGORI_ALTERNATIVER;
+    return [...KATEGORI_ALTERNATIVER, { verdi: vare.kategori, label: `${vare.kategori} (utenfor lista)` }];
+  }, [vare.kategori]);
+
+  async function lagreArtikkel() {
+    setFeil(null);
+    setSuksess(null);
+    if (!navn.trim() || !kategori || !leverandorId) {
+      setFeil("Navn, kategori og leverandør må være satt.");
+      return;
+    }
+    setLaster(true);
+    try {
+      await oppdaterVare(vare.id, { navn: navn.trim(), kategori, leverandorId });
+      setSuksess("Artikkel lagret.");
+      await onLagret();
+    } catch (err) {
+      setFeil(err instanceof ApiFeil ? err.message : "Kunne ikke lagre artikkelen.");
+    } finally {
+      setLaster(false);
+    }
+  }
+
+  return (
+    <View style={{ gap: 12 }}>
+      <TekstFelt label="Navn" value={navn} onChangeText={setNavn} />
+      <VelgFelt
+        label="Kategori"
+        valgt={kategori}
+        alternativer={kategoriAlternativer}
+        onVelg={setKategori}
+        tomtekst="Velg kategori"
+      />
+      <VelgFelt
+        label="Leverandør"
+        valgt={leverandorId}
+        alternativer={leverandorAlternativer}
+        onVelg={setLeverandorId}
+        tomtekst="Velg leverandør"
+      />
+      {feil && <FeilBanner tekst={feil} />}
+      {suksess && <Text style={stiler.suksessTekst}>{suksess}</Text>}
+      <Knapp tittel="Lagre artikkel" onPress={lagreArtikkel} disabled={laster} />
+
+      <Text style={stiler.underseksjon}>Varianter ({varianter.length})</Text>
+      {varianter.map((v) => (
+        <VariantRedigering
+          key={v.id}
+          variant={v}
+          merkeAlternativer={merkeAlternativer}
+          onLagret={onLagret}
+        />
+      ))}
+
+      {leggerTil ? (
+        <NyVariantMini
+          vareId={vare.id}
+          artikkelnavn={vare.navn}
+          merkeAlternativer={merkeAlternativer}
+          onFerdig={async () => {
+            setLeggerTil(false);
+            await onLagret();
+          }}
+          onAvbryt={() => setLeggerTil(false)}
+        />
+      ) : (
+        <Knapp
+          tittel="+ Legg til variant (størrelse/farge)"
+          onPress={() => setLeggerTil(true)}
+          variant="sekundaer"
+        />
+      )}
+    </View>
+  );
+}
+
+function VariantRedigering({
+  variant,
+  merkeAlternativer,
+  onLagret,
+}: {
+  variant: Variant;
+  merkeAlternativer: MerkeAlternativ[];
+  onLagret: () => Promise<void>;
+}) {
+  const [merkeId, setMerkeId] = useState<string | null>(variant.merkeId);
+  const [pris, setPris] = useState(oreTilKrTekst(variant.verdiOre));
+  const [bildeurl, setBildeurl] = useState(variant.bildeurl ?? "");
+  const [bildeLaster, setBildeLaster] = useState(false);
+  const [feil, setFeil] = useState<string | null>(null);
+  const [suksess, setSuksess] = useState<string | null>(null);
+  const [laster, setLaster] = useState(false);
+
+  async function bildeValgt(bilde: KomprimertBilde) {
+    setBildeLaster(true);
+    try {
+      const { url } = await lastOppBilde(bilde.base64);
+      setBildeurl(url);
+    } catch (err) {
+      setFeil(err instanceof Error ? `Bildet feilet: ${err.message}` : "Opplasting feilet.");
+    } finally {
+      setBildeLaster(false);
+    }
+  }
+
+  async function lagre() {
+    setFeil(null);
+    setSuksess(null);
+    const verdiOre = pris.trim() ? krTilOre(pris) : null;
+    if (pris.trim() && verdiOre === null) {
+      setFeil("Pris må være et gyldig beløp.");
+      return;
+    }
+    setLaster(true);
+    try {
+      await oppdaterVariant(variant.id, {
+        merkeId,
+        verdiOre,
+        bildeurl: bildeurl.trim() || null,
+      });
+      setSuksess("Variant lagret.");
+      await onLagret();
+    } catch (err) {
+      setFeil(err instanceof ApiFeil ? err.message : "Kunne ikke lagre varianten.");
+    } finally {
+      setLaster(false);
+    }
+  }
+
+  return (
+    <Kort>
+      <View style={{ gap: 10 }}>
+        <View style={stiler.variantRad}>
+          <Miniatyr url={bildeurl || null} bokstav={variant.sku} storrelse={44} />
+          <Text style={[stiler.radTittel, { flex: 1 }]}>SKU: {variant.sku}</Text>
+        </View>
+        <TekstFelt label="Pris per enhet, kr" value={pris} onChangeText={setPris} keyboardType="numeric" />
+        <VelgFelt
+          label="Merke"
+          valgt={merkeId}
+          alternativer={merkeAlternativer}
+          onVelg={setMerkeId}
+          tomtekst="Ingen merke"
+        />
+        <BildeVelger laster={bildeLaster} onValgt={bildeValgt} onFeil={setFeil} />
+        {feil && <FeilBanner tekst={feil} />}
+        {suksess && <Text style={stiler.suksessTekst}>{suksess}</Text>}
+        <Knapp tittel="Lagre variant" onPress={lagre} disabled={laster} variant="sekundaer" />
+      </View>
+    </Kort>
+  );
+}
+
+function NyVariantMini({
+  vareId,
+  artikkelnavn,
+  merkeAlternativer,
+  onFerdig,
+  onAvbryt,
+}: {
+  vareId: string;
+  artikkelnavn: string;
+  merkeAlternativer: MerkeAlternativ[];
+  onFerdig: () => Promise<void>;
+  onAvbryt: () => void;
+}) {
+  const [sku, setSku] = useState(`${lagSkuBase(artikkelnavn)}-${tilfeldigSuffiks()}`);
+  const [pris, setPris] = useState("");
+  const [merkeId, setMerkeId] = useState<string | null>(null);
+  const [bildeurl, setBildeurl] = useState("");
+  const [bildeLaster, setBildeLaster] = useState(false);
+  const [feil, setFeil] = useState<string | null>(null);
+  const [laster, setLaster] = useState(false);
+
+  async function bildeValgt(bilde: KomprimertBilde) {
+    setBildeLaster(true);
+    try {
+      const { url } = await lastOppBilde(bilde.base64);
+      setBildeurl(url);
+    } catch (err) {
+      setFeil(err instanceof Error ? `Bildet feilet: ${err.message}` : "Opplasting feilet.");
+    } finally {
+      setBildeLaster(false);
+    }
+  }
+
+  async function opprett() {
+    setFeil(null);
+    if (!sku.trim()) {
+      setFeil("SKU kan ikke være tom.");
+      return;
+    }
+    const verdiOre = pris.trim() ? krTilOre(pris) : null;
+    if (pris.trim() && verdiOre === null) {
+      setFeil("Pris må være et gyldig beløp.");
+      return;
+    }
+    setLaster(true);
+    try {
+      await opprettVariant({
+        vareId,
+        sku: sku.trim(),
+        ...(merkeId ? { merkeId } : {}),
+        ...(verdiOre !== null ? { verdiOre } : {}),
+        ...(bildeurl ? { bildeurl } : {}),
+      });
+      await onFerdig();
+    } catch (err) {
+      setFeil(err instanceof ApiFeil ? err.message : "Kunne ikke opprette varianten.");
+    } finally {
+      setLaster(false);
+    }
+  }
+
+  return (
+    <Kort>
+      <View style={{ gap: 10 }}>
+        <Text style={stiler.radTittel}>Ny variant</Text>
+        <TekstFelt label="SKU" value={sku} onChangeText={setSku} />
+        <TekstFelt
+          label="Pris per enhet, kr (valgfritt)"
+          value={pris}
+          onChangeText={setPris}
+          keyboardType="numeric"
+        />
+        <VelgFelt
+          label="Merke (valgfritt)"
+          valgt={merkeId}
+          alternativer={merkeAlternativer}
+          onVelg={setMerkeId}
+          tomtekst="Ingen merke"
+        />
+        <BildeVelger laster={bildeLaster} onValgt={bildeValgt} onFeil={setFeil} />
+        {bildeurl ? <Miniatyr url={bildeurl} storrelse={48} /> : null}
+        {feil && <FeilBanner tekst={feil} />}
+        <View style={stiler.knappRad}>
+          <View style={stiler.knappRadCelle}>
+            <Knapp tittel="Avbryt" onPress={onAvbryt} variant="sekundaer" disabled={laster} />
+          </View>
+          <View style={stiler.knappRadCelle}>
+            <Knapp tittel="Legg til" onPress={opprett} disabled={laster} />
+          </View>
+        </View>
+      </View>
+    </Kort>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Bildegjenkjenning (AI) - foreslår navn/SKU/bilde
+// ---------------------------------------------------------------------------
 
 function VareKameraModal({
   formaal,
@@ -497,7 +844,9 @@ function VareKameraModal({
     try {
       tatt = await taBilde();
     } catch (err) {
-      setFeil(err instanceof Error ? `Kunne ikke behandle bildet: ${err.message}` : "Kunne ikke behandle bildet.");
+      setFeil(
+        err instanceof Error ? `Kunne ikke behandle bildet: ${err.message}` : "Kunne ikke behandle bildet.",
+      );
       return;
     }
     if (!tatt) return;
@@ -523,9 +872,6 @@ function VareKameraModal({
     }
   }
 
-  // Laster opp det skannede bildet så det blir den nye variantens bilde, og
-  // fyller forslaget inn i skjemaet under. Feiler opplastingen, går vi videre
-  // uten bilde - det kan legges til manuelt senere.
   async function brukForslag(r: VariantGjenkjenningResultat) {
     setLaster(true);
     try {
@@ -534,7 +880,7 @@ function VareKameraModal({
         try {
           url = (await lastOppBilde(bilde.base64)).url;
         } catch {
-          /* ignorer - fortsett uten bilde */
+          /* fortsett uten bilde */
         }
       }
       onForslagNyArtikkel(r, url);
@@ -548,7 +894,7 @@ function VareKameraModal({
       <Pressable style={stiler.modalBakgrunn} onPress={onLukk}>
         <Pressable style={stiler.modalKort} onPress={(e) => e.stopPropagation()}>
           <Text style={stiler.modalTittel}>
-            {formaal === "mottak" ? "Ta bilde av varen" : "Ta bilde for forslag til ny artikkel"}
+            {formaal === "mottak" ? "Ta bilde av artikkelen" : "Ta bilde for forslag til ny artikkel"}
           </Text>
           <Knapp tittel="Åpne kamera" onPress={skannBilde} disabled={laster} variant="sekundaer" />
 
@@ -556,9 +902,13 @@ function VareKameraModal({
 
           {resultat && !resultat.variantId && resultat.kandidater.length > 1 && (
             <View style={stiler.kandidatListe}>
-              <Text style={stiler.hjelpetekst}>Flere mulige treff — velg riktig variant:</Text>
+              <Text style={stiler.hjelpetekst}>Flere mulige treff — velg riktig:</Text>
               {resultat.kandidater.map((k) => (
-                <Pressable key={k.id} style={stiler.kandidatRad} onPress={() => onFunnetEksisterende(k.id)}>
+                <Pressable
+                  key={k.id}
+                  style={stiler.kandidatRad}
+                  onPress={() => onFunnetEksisterende(k.id)}
+                >
                   <Text style={stiler.radTittel}>{k.navn}</Text>
                   <Text style={stiler.radUndertekst}>{k.sku}</Text>
                 </Pressable>
@@ -569,15 +919,17 @@ function VareKameraModal({
           {resultat?.nyVariant && (
             <View style={stiler.kandidatListe}>
               <Text style={stiler.hjelpetekst}>
-                Ingen treff blant eksisterende varer
-                {formaal === "mottak" ? " — rull ned til 'Ny vare' for å opprette den." : "."}
+                Ingen treff blant eksisterende artikler
+                {formaal === "mottak" ? " — opprett den under «Ny artikkel»." : "."}
               </Text>
               <Text style={stiler.radTittel}>{resultat.varetype}</Text>
               <Text style={stiler.radUndertekst}>{resultat.beskrivelse}</Text>
-              {resultat.synligSku && <Text style={stiler.radUndertekst}>Synlig SKU: {resultat.synligSku}</Text>}
+              {resultat.synligSku && (
+                <Text style={stiler.radUndertekst}>Synlig SKU: {resultat.synligSku}</Text>
+              )}
               {formaal === "ny" && (
                 <Knapp
-                  tittel={bilde ? "Bruk forslag + bilde i skjemaet" : "Bruk forslag i skjemaet under"}
+                  tittel={bilde ? "Bruk forslag + bilde" : "Bruk forslag i skjemaet"}
                   onPress={() => brukForslag(resultat)}
                   disabled={laster}
                 />
@@ -592,114 +944,6 @@ function VareKameraModal({
   );
 }
 
-function RedigerVariantModal({
-  variant,
-  vareNavn,
-  merkeAlternativer,
-  onLukk,
-  onLagret,
-}: {
-  variant: Variant;
-  vareNavn: string;
-  merkeAlternativer: { verdi: string; label: string; bilde?: string | null }[];
-  onLukk: () => void;
-  onLagret: () => Promise<void>;
-}) {
-  const [merkeId, setMerkeId] = useState<string | null>(variant.merkeId);
-  const [verdi, setVerdi] = useState(oreTilKrTekst(variant.verdiOre));
-  const [bildeurl, setBildeurl] = useState(variant.bildeurl ?? "");
-  const [bildeLaster, setBildeLaster] = useState(false);
-  const [feil, setFeil] = useState<string | null>(null);
-  const [laster, setLaster] = useState(false);
-
-  async function byttBilde() {
-    setFeil(null);
-    setBildeLaster(true);
-    try {
-      const bilde = await taBilde();
-      if (!bilde) return;
-      const { url } = await lastOppBilde(bilde.base64);
-      setBildeurl(url);
-    } catch (err) {
-      setFeil(err instanceof Error ? `Bildet feilet: ${err.message}` : "Kunne ikke laste opp bildet. Prøv igjen.");
-    } finally {
-      setBildeLaster(false);
-    }
-  }
-
-  async function lagre() {
-    setFeil(null);
-    const bildeurlTrimmet = bildeurl.trim();
-    if (bildeurlTrimmet && !erGyldigUrl(bildeurlTrimmet)) {
-      setFeil("Bilde-URL må være en gyldig lenke (https://...).");
-      return;
-    }
-    const verdiOre = verdi.trim() ? krTilOre(verdi) : null;
-    if (verdi.trim() && verdiOre === null) {
-      setFeil("Verdi må være et gyldig beløp, f.eks. 149,00.");
-      return;
-    }
-
-    setLaster(true);
-    try {
-      await oppdaterVariant(variant.id, {
-        merkeId: merkeId,
-        verdiOre,
-        bildeurl: bildeurlTrimmet || null,
-      });
-      await onLagret();
-    } catch (err) {
-      setFeil(err instanceof ApiFeil ? err.message : "Kunne ikke lagre endringene.");
-    } finally {
-      setLaster(false);
-    }
-  }
-
-  return (
-    <Modal visible transparent animationType="slide" onRequestClose={onLukk}>
-      <Pressable style={stiler.modalBakgrunn} onPress={onLukk}>
-        <Pressable style={stiler.modalKort} onPress={(e) => e.stopPropagation()}>
-          <Text style={stiler.modalTittel}>
-            {vareNavn} — {variant.sku}
-          </Text>
-
-          <VelgFelt
-            label="Merke"
-            valgt={merkeId}
-            alternativer={merkeAlternativer}
-            onVelg={setMerkeId}
-            tomtekst="Ingen merke"
-          />
-          <TekstFelt label="Verdi per enhet, kr" value={verdi} onChangeText={setVerdi} keyboardType="numeric" />
-          <View style={stiler.bildeRad}>
-            <View style={stiler.bildeRadKnapp}>
-              <Knapp
-                tittel={bildeurl ? "📷 Ta nytt bilde" : "📷 Ta bilde"}
-                onPress={byttBilde}
-                disabled={bildeLaster}
-                variant="sekundaer"
-              />
-            </View>
-            {bildeurl ? <Miniatyr url={bildeurl} storrelse={48} /> : null}
-          </View>
-          <TekstFelt label="Bilde-URL" value={bildeurl} onChangeText={setBildeurl} placeholder="https://..." />
-
-          {feil && <FeilBanner tekst={feil} />}
-
-          <View style={stiler.modalKnapper}>
-            <View style={stiler.modalKnapp}>
-              <Knapp tittel="Avbryt" onPress={onLukk} variant="sekundaer" disabled={laster} />
-            </View>
-            <View style={stiler.modalKnapp}>
-              <Knapp tittel="Lagre" onPress={lagre} disabled={laster} />
-            </View>
-          </View>
-        </Pressable>
-      </Pressable>
-    </Modal>
-  );
-}
-
 const stiler = StyleSheet.create({
   rot: {
     flex: 1,
@@ -708,7 +952,7 @@ const stiler = StyleSheet.create({
   scrollInnhold: {
     paddingHorizontal: 16,
     paddingTop: 20,
-    paddingBottom: 32,
+    paddingBottom: 40,
     gap: 12,
   },
   tittel: {
@@ -723,17 +967,15 @@ const stiler = StyleSheet.create({
     fontSize: 13,
     color: "#888",
   },
+  underseksjon: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: farger.undertekst,
+    marginTop: 6,
+  },
   suksessTekst: {
     color: farger.primaer,
     fontWeight: "600",
-  },
-  bildeRad: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-  },
-  bildeRadKnapp: {
-    flex: 1,
   },
   kameraKnapp: {
     paddingVertical: 10,
@@ -778,19 +1020,12 @@ const stiler = StyleSheet.create({
     alignItems: "center",
     gap: 10,
   },
-  variantTekst: {
+  knappRad: {
+    flexDirection: "row",
+    gap: 10,
+  },
+  knappRadCelle: {
     flex: 1,
-  },
-  merkeBadge: {
-    backgroundColor: "#eef3f0",
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-  },
-  merkeBadgeTekst: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: farger.primaer,
   },
   modalBakgrunn: {
     flex: 1,
@@ -808,12 +1043,5 @@ const stiler = StyleSheet.create({
     fontSize: 17,
     fontWeight: "700",
     color: farger.tekst,
-  },
-  modalKnapper: {
-    flexDirection: "row",
-    gap: 10,
-  },
-  modalKnapp: {
-    flex: 1,
   },
 });
