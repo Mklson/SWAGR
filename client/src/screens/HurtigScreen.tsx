@@ -31,6 +31,7 @@ import {
 import { hentLagretVerdi, lagreVerdi } from "../lib/lagring";
 import { hentLagretBruker } from "../lib/auth";
 import { formatterKroner } from "../lib/valuta";
+import { KATEGORIER } from "../lib/kategorier";
 import { ALLE_KATEGORIER, MerkeOgKategoriFilter, UTEN_MERKE } from "../components/VareFilter";
 import type {
   BeholdningRad,
@@ -484,6 +485,8 @@ export function HurtigScreen() {
         varianter={varianter}
         vareMap={vareMap}
         merkeMap={merkeMap}
+        beholdning={beholdning}
+        lokasjonId={lokasjonId!}
         søk={søk}
         onSøkChange={setSøk}
         valgtMerke={valgtMerke}
@@ -540,11 +543,22 @@ function TypeKnapp({ label, aktiv, onPress }: { label: string; aktiv: boolean; o
   );
 }
 
+type Sortering = "navn" | "prisOpp" | "prisNed" | "lager";
+
+const SORT_VALG: { verdi: Sortering; label: string }[] = [
+  { verdi: "navn", label: "Navn" },
+  { verdi: "prisOpp", label: "Pris ↑" },
+  { verdi: "prisNed", label: "Pris ↓" },
+  { verdi: "lager", label: "Mest på lager" },
+];
+
 function VariantGrid({
   varer,
   varianter,
   vareMap,
   merkeMap,
+  beholdning,
+  lokasjonId,
   søk,
   onSøkChange,
   valgtMerke,
@@ -559,6 +573,8 @@ function VariantGrid({
   varianter: Variant[];
   vareMap: Map<string, Vare>;
   merkeMap: Map<string, Merke>;
+  beholdning: BeholdningRad[];
+  lokasjonId: string;
   søk: string;
   onSøkChange: (v: string) => void;
   valgtMerke: string | null;
@@ -569,6 +585,9 @@ function VariantGrid({
   valgtKategori: string;
   onValgtKategoriChange: (k: string) => void;
 }) {
+  const [sortering, setSortering] = useState<Sortering>("navn");
+  const [kunPaLager, setKunPaLager] = useState(false);
+
   const merkeAlternativer = useMemo(() => {
     const idSet = new Set(varianter.map((v) => v.merkeId).filter((id): id is string => id !== null));
     return Array.from(merkeMap.values())
@@ -577,23 +596,37 @@ function VariantGrid({
       .map((m) => ({ id: m.id, navn: m.navn, logoUrl: m.logoUrl }));
   }, [varianter, merkeMap]);
   const harUtenMerke = useMemo(() => varianter.some((v) => !v.merkeId), [varianter]);
+
+  // Fast kategoriliste + eventuelle eldre kategorier som finnes i data.
   const kategoriAlternativer = useMemo(() => {
-    const sett = new Set<string>();
+    const iData = new Set<string>();
     for (const v of varianter) {
-      const kategori = vareMap.get(v.vareId)?.kategori;
-      if (kategori) sett.add(kategori);
+      const kat = vareMap.get(v.vareId)?.kategori;
+      if (kat) iData.add(kat);
     }
-    return Array.from(sett).sort((a, b) => a.localeCompare(b));
+    const ekstra = [...iData].filter((k) => !KATEGORIER.includes(k as never)).sort();
+    return [...KATEGORIER, ...ekstra];
   }, [varianter, vareMap]);
+
+  // Tilgjengelig antall per variant på valgt lokasjon.
+  const tilgjengeligKart = useMemo(() => {
+    const kart = new Map<string, number>();
+    for (const b of beholdning) {
+      if (b.lokasjonId !== lokasjonId) continue;
+      kart.set(b.variantId, (kart.get(b.variantId) ?? 0) + b.tilgjengelig);
+    }
+    return kart;
+  }, [beholdning, lokasjonId]);
 
   const filtrerte = useMemo(() => {
     const søkLav = søk.trim().toLowerCase();
-    return varianter.filter((v) => {
+    const rader = varianter.filter((v) => {
       const vare = vareMap.get(v.vareId);
       const merkeNavn = v.merkeId ? merkeMap.get(v.merkeId)?.navn ?? null : null;
       if (valgtMerke === UTEN_MERKE && v.merkeId) return false;
       else if (valgtMerke && valgtMerke !== UTEN_MERKE && v.merkeId !== valgtMerke) return false;
       if (valgtKategori !== ALLE_KATEGORIER && vare?.kategori !== valgtKategori) return false;
+      if (kunPaLager && (tilgjengeligKart.get(v.id) ?? 0) <= 0) return false;
       if (!søkLav) return true;
       return (
         vare?.navn.toLowerCase().includes(søkLav) ||
@@ -601,7 +634,27 @@ function VariantGrid({
         merkeNavn?.toLowerCase().includes(søkLav)
       );
     });
-  }, [varianter, vareMap, merkeMap, søk, valgtMerke, valgtKategori]);
+
+    const navnAv = (v: Variant) => vareMap.get(v.vareId)?.navn ?? v.sku;
+    rader.sort((a, b) => {
+      if (sortering === "prisOpp") return (a.verdiOre ?? Infinity) - (b.verdiOre ?? Infinity);
+      if (sortering === "prisNed") return (b.verdiOre ?? -1) - (a.verdiOre ?? -1);
+      if (sortering === "lager")
+        return (tilgjengeligKart.get(b.id) ?? 0) - (tilgjengeligKart.get(a.id) ?? 0);
+      return navnAv(a).localeCompare(navnAv(b));
+    });
+    return rader;
+  }, [
+    varianter,
+    vareMap,
+    merkeMap,
+    søk,
+    valgtMerke,
+    valgtKategori,
+    kunPaLager,
+    tilgjengeligKart,
+    sortering,
+  ]);
 
   return (
     <FlatList
@@ -611,13 +664,14 @@ function VariantGrid({
       keyExtractor={(item) => item.id}
       numColumns={3}
       columnWrapperStyle={stiler.gridRad}
+      keyboardShouldPersistTaps="handled"
       ListHeaderComponent={
         <View style={stiler.gridHeader}>
           <TextInput
             style={stiler.søkInput}
             value={søk}
             onChangeText={onSøkChange}
-            placeholder="Søk vare, SKU eller merke..."
+            placeholder="Søk artikkel, SKU eller merke..."
           />
           <MerkeOgKategoriFilter
             idPrefiks="hurtig"
@@ -629,22 +683,51 @@ function VariantGrid({
             valgtKategori={valgtKategori}
             onValgtKategoriChange={onValgtKategoriChange}
           />
+          <View style={stiler.sortRad}>
+            {SORT_VALG.map((s) => (
+              <Pressable
+                key={s.verdi}
+                style={[stiler.sortChip, sortering === s.verdi && stiler.sortChipAktiv]}
+                onPress={() => setSortering(s.verdi)}
+              >
+                <Text
+                  style={[stiler.sortChipTekst, sortering === s.verdi && stiler.sortChipTekstAktiv]}
+                >
+                  {s.label}
+                </Text>
+              </Pressable>
+            ))}
+            <Pressable
+              style={[stiler.sortChip, kunPaLager && stiler.sortChipAktiv]}
+              onPress={() => setKunPaLager((v) => !v)}
+            >
+              <Text style={[stiler.sortChipTekst, kunPaLager && stiler.sortChipTekstAktiv]}>
+                Kun på lager
+              </Text>
+            </Pressable>
+          </View>
           <Pressable style={stiler.kameraKnapp} onPress={onÅpneKamera}>
-            <Text style={stiler.kameraKnappTekst}>📷 Finner du ikke varen? Ta bilde</Text>
+            <Text style={stiler.kameraKnappTekst}>📷 Finner du ikke artikkelen? Ta bilde</Text>
           </Pressable>
         </View>
       }
-      ListEmptyComponent={<TomListeTekst tekst="Ingen varianter matcher søket." />}
+      ListEmptyComponent={<TomListeTekst tekst="Ingen artikler matcher filteret." />}
       renderItem={({ item }) => {
         const vare = vareMap.get(item.vareId);
+        const antall = tilgjengeligKart.get(item.id) ?? 0;
         return (
           <Pressable style={stiler.rute} onPress={() => onVelgVariant(item.id)}>
             <Miniatyr url={item.bildeurl} bokstav={vare?.navn ?? item.sku} storrelse={64} />
             <Text style={stiler.ruteNavn} numberOfLines={2}>
               {vare?.navn ?? "Ukjent"}
             </Text>
-            <Text style={stiler.ruteSku} numberOfLines={1}>
-              {item.sku}
+            {item.verdiOre != null && (
+              <Text style={stiler.rutePris} numberOfLines={1}>
+                {formatterKroner(item.verdiOre)}
+              </Text>
+            )}
+            <Text style={antall > 0 ? stiler.ruteLager : stiler.ruteLagerTom} numberOfLines={1}>
+              {antall > 0 ? `${antall} på lager` : "Tomt"}
             </Text>
           </Pressable>
         );
@@ -1074,6 +1157,46 @@ const stiler = StyleSheet.create({
     fontSize: 10,
     color: "#999",
     textAlign: "center",
+  },
+  rutePris: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: farger.tekst,
+    textAlign: "center",
+  },
+  ruteLager: {
+    fontSize: 10,
+    color: farger.primaer,
+    fontWeight: "600",
+    textAlign: "center",
+  },
+  ruteLagerTom: {
+    fontSize: 10,
+    color: "#c0392b",
+    textAlign: "center",
+  },
+  sortRad: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
+    paddingHorizontal: 4,
+  },
+  sortChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    backgroundColor: "#f0f0f0",
+  },
+  sortChipAktiv: {
+    backgroundColor: farger.primaer,
+  },
+  sortChipTekst: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#666",
+  },
+  sortChipTekstAktiv: {
+    color: "#fff",
   },
   kurvBar: {
     position: "absolute",
