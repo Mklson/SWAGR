@@ -110,6 +110,18 @@ model Kontekst {
   @@map("kontekster")
 }
 
+// Enkelt formål for et uttak - "Festival", "Messe", "Gave" osv. Bare et navn.
+model Formaal {
+  id        String   @id @default(uuid())
+  navn      String   @unique
+  opprettet DateTime @default(now())
+
+  bevegelser    Bevegelse[]
+  reservasjoner Reservasjon[]
+
+  @@map("formaal")
+}
+
 model Bruker {
   id    String @id @default(uuid())
   navn  String
@@ -143,7 +155,10 @@ model Bevegelse {
   id         String        @id @default(uuid())
   variantId  String        @map("variant_id")
   lokasjonId String        @map("lokasjon_id")
-  kontekstId String        @map("kontekst_id")
+  // Nullbar: kunde er valgfritt på uttak (kan gå til et rent formål uten kunde),
+  // og varemottak/svinn/internbruk bruker skjulte system-kontekster.
+  kontekstId String?       @map("kontekst_id")
+  formaalId  String?       @map("formaal_id")
   brukerId   String        @map("bruker_id")
   type       BevegelseType
   antall     Int
@@ -154,10 +169,11 @@ model Bevegelse {
   verdiOre   Int?          @map("verdi_ore")
   tidspunkt  DateTime      @default(now())
 
-  variant  Variant  @relation(fields: [variantId], references: [id])
-  lokasjon Lokasjon @relation(fields: [lokasjonId], references: [id])
-  kontekst Kontekst @relation(fields: [kontekstId], references: [id])
-  bruker   Bruker   @relation(fields: [brukerId], references: [id])
+  variant  Variant   @relation(fields: [variantId], references: [id])
+  lokasjon Lokasjon  @relation(fields: [lokasjonId], references: [id])
+  kontekst Kontekst? @relation(fields: [kontekstId], references: [id])
+  formaal  Formaal?  @relation(fields: [formaalId], references: [id])
+  bruker   Bruker    @relation(fields: [brukerId], references: [id])
 
   @@index([variantId, lokasjonId, tidspunkt])
   @@map("bevegelser")
@@ -171,17 +187,19 @@ model Reservasjon {
   id         String            @id @default(uuid())
   variantId  String            @map("variant_id")
   lokasjonId String            @map("lokasjon_id")
-  kontekstId String            @map("kontekst_id")
+  kontekstId String?           @map("kontekst_id")
+  formaalId  String?           @map("formaal_id")
   brukerId   String            @map("bruker_id")
   antall     Int
   status     ReservasjonStatus @default(aktiv)
   tilDato    DateTime?         @map("til_dato")
   opprettet  DateTime          @default(now())
 
-  variant  Variant  @relation(fields: [variantId], references: [id])
-  lokasjon Lokasjon @relation(fields: [lokasjonId], references: [id])
-  kontekst Kontekst @relation(fields: [kontekstId], references: [id])
-  bruker   Bruker   @relation(fields: [brukerId], references: [id])
+  variant  Variant   @relation(fields: [variantId], references: [id])
+  lokasjon Lokasjon  @relation(fields: [lokasjonId], references: [id])
+  kontekst Kontekst? @relation(fields: [kontekstId], references: [id])
+  formaal  Formaal?  @relation(fields: [formaalId], references: [id])
+  bruker   Bruker    @relation(fields: [brukerId], references: [id])
 
   @@index([variantId, lokasjonId, status])
   @@map("reservasjoner")

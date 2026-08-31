@@ -84,7 +84,8 @@ export const bevegelseTypeSchema = z.enum([
 export const bevegelseCreateSchema = z.object({
   variantId: z.string().uuid(),
   lokasjonId: z.string().uuid(),
-  kontekstId: z.string().uuid(),
+  kontekstId: z.string().uuid().optional(),
+  formaalId: z.string().uuid().optional(),
   brukerId: z.string().uuid(),
   type: bevegelseTypeSchema,
   antall: z.number().int().positive(),
@@ -132,10 +133,15 @@ export const reservasjonStatusSchema = z.enum(["aktiv", "kansellert", "fullfort"
 export const reservasjonCreateSchema = z.object({
   variantId: z.string().uuid(),
   lokasjonId: z.string().uuid(),
-  kontekstId: z.string().uuid(),
+  kontekstId: z.string().uuid().optional(),
+  formaalId: z.string().uuid().optional(),
   brukerId: z.string().uuid(),
   antall: z.number().int().positive(),
   tilDato: z.coerce.date().optional(),
+});
+
+export const formaalCreateSchema = z.object({
+  navn: z.string().min(1),
 });
 
 export const reservasjonListQuerySchema = z.object({

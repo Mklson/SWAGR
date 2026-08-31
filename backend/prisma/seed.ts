@@ -53,6 +53,10 @@ async function main() {
     data: { type: "innkjop", navn: leverandor.navn, referanse: leverandor.id },
   });
 
+  await prisma.formaal.createMany({
+    data: [{ navn: "Festival" }, { navn: "Messe" }, { navn: "Gave" }],
+  });
+
   const bruker = await prisma.bruker.create({
     data: { navn: "Kari Nordmann", rolle: "lagermedarbeider" },
   });

@@ -151,7 +151,7 @@ export async function beregnRapportFleksibel(
   });
 
   interface Rad {
-    kontekstId: string;
+    kontekstId: string | null;
     merkeId: string | null;
     type: string;
     antall: number;

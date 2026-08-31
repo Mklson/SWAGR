@@ -6,6 +6,7 @@ import { registrerAuth } from "./auth/index.js";
 import { authRoutes } from "./routes/auth.js";
 import { inviterteRoutes } from "./routes/inviterte.js";
 import { bilderRoutes } from "./routes/bilder.js";
+import { formaalRoutes } from "./routes/formaal.js";
 import { leverandorerRoutes } from "./routes/leverandorer.js";
 import { varerRoutes } from "./routes/varer.js";
 import { variantRoutes } from "./routes/varianter.js";
@@ -61,6 +62,7 @@ export async function buildServer(valg: BuildServerValg = {}) {
   authRoutes(app);
   inviterteRoutes(app);
   bilderRoutes(app);
+  formaalRoutes(app);
   leverandorerRoutes(app);
   varerRoutes(app);
   variantRoutes(app);
