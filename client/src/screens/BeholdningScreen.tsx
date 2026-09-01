@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  Image,
   Modal,
   Pressable,
   RefreshControl,
+  ScrollView,
   SectionList,
   StyleSheet,
   Text,
@@ -13,15 +15,25 @@ import {
   ApiFeil,
   gjenkjennVariant,
   hentBeholdning,
+  listLeverandorer,
   listLokasjoner,
   listMerker,
   listVarer,
   listVarianter,
 } from "../api";
 import { taBilde, type KomprimertBilde } from "../lib/bilde";
+import { formatterKroner } from "../lib/valuta";
 import { KATEGORIER } from "../lib/kategorier";
 import { ALLE_KATEGORIER, MerkeOgKategoriFilter, UTEN_MERKE } from "../components/VareFilter";
-import type { BeholdningRad, Lokasjon, Merke, Vare, Variant, VariantGjenkjenningResultat } from "../types";
+import type {
+  BeholdningRad,
+  Leverandor,
+  Lokasjon,
+  Merke,
+  Vare,
+  Variant,
+  VariantGjenkjenningResultat,
+} from "../types";
 import { farger, FeilBanner, Knapp, Kort, Miniatyr, TomListeTekst } from "../components/ui";
 
 interface BeholdningVisningsrad extends BeholdningRad {
@@ -37,26 +49,33 @@ interface BeholdningVisningsrad extends BeholdningRad {
 export function BeholdningScreen() {
   const [rader, setRader] = useState<BeholdningVisningsrad[]>([]);
   const [merker, setMerker] = useState<Merke[]>([]);
+  const [varianter, setVarianter] = useState<Variant[]>([]);
+  const [varer, setVarer] = useState<Vare[]>([]);
+  const [lokasjoner, setLokasjoner] = useState<Lokasjon[]>([]);
+  const [leverandorer, setLeverandorer] = useState<Leverandor[]>([]);
   const [laster, setLaster] = useState(true);
   const [feil, setFeil] = useState<string | null>(null);
   const [valgtMerke, setValgtMerke] = useState<string | null>(null);
   const [valgtKategori, setValgtKategori] = useState<string>(ALLE_KATEGORIER);
   const [søk, setSøk] = useState("");
   const [kameraÅpen, setKameraÅpen] = useState(false);
+  const [valgtVariantId, setValgtVariantId] = useState<string | null>(null);
 
   const lastInn = useCallback(async () => {
     setFeil(null);
     try {
-      const [beholdning, varianter, varer, lokasjoner, merkerListe] = await Promise.all([
-        hentBeholdning(),
-        listVarianter(),
-        listVarer(),
-        listLokasjoner(),
-        listMerker(),
-      ]);
-      const vareMap = new Map<string, Vare>(varer.map((v) => [v.id, v]));
-      const variantMap = new Map<string, Variant>(varianter.map((v) => [v.id, v]));
-      const lokasjonMap = new Map<string, Lokasjon>(lokasjoner.map((l) => [l.id, l]));
+      const [beholdning, variantListe, vareListe, lokasjonListe, merkerListe, leverandorListe] =
+        await Promise.all([
+          hentBeholdning(),
+          listVarianter(),
+          listVarer(),
+          listLokasjoner(),
+          listMerker(),
+          listLeverandorer(),
+        ]);
+      const vareMap = new Map<string, Vare>(vareListe.map((v) => [v.id, v]));
+      const variantMap = new Map<string, Variant>(variantListe.map((v) => [v.id, v]));
+      const lokasjonMap = new Map<string, Lokasjon>(lokasjonListe.map((l) => [l.id, l]));
       const merkeMap = new Map<string, Merke>(merkerListe.map((m) => [m.id, m]));
 
       const visningsrader: BeholdningVisningsrad[] = beholdning
@@ -81,6 +100,10 @@ export function BeholdningScreen() {
 
       setRader(visningsrader);
       setMerker(merkerListe);
+      setVarianter(variantListe);
+      setVarer(vareListe);
+      setLokasjoner(lokasjonListe);
+      setLeverandorer(leverandorListe);
     } catch {
       setFeil("Kunne ikke hente beholdning. Sjekk at backend kjører.");
     } finally {
@@ -185,26 +208,28 @@ export function BeholdningScreen() {
         }
         renderSectionHeader={({ section }) => <Text style={stiler.seksjonTittel}>{section.title}</Text>}
         renderItem={({ item }) => (
-          <Kort>
-            <View style={stiler.radInnhold}>
-              <Miniatyr url={item.bildeurl} bokstav={item.variantNavn} />
-              <View style={stiler.radTekst}>
-                <Text style={stiler.radTittel}>{item.variantNavn}</Text>
-                <Text style={stiler.radLokasjon}>{item.lokasjonNavn}</Text>
-                {item.reservert > 0 && (
-                  <Text style={stiler.radReservert}>{item.reservert} stk reservert</Text>
-                )}
+          <Pressable onPress={() => setValgtVariantId(item.variantId)}>
+            <Kort>
+              <View style={stiler.radInnhold}>
+                <Miniatyr url={item.bildeurl} bokstav={item.variantNavn} />
+                <View style={stiler.radTekst}>
+                  <Text style={stiler.radTittel}>{item.variantNavn}</Text>
+                  <Text style={stiler.radLokasjon}>{item.lokasjonNavn}</Text>
+                  {item.reservert > 0 && (
+                    <Text style={stiler.radReservert}>{item.reservert} stk reservert</Text>
+                  )}
+                </View>
+                <View style={stiler.radTall}>
+                  <Text style={[stiler.radBeholdning, item.beholdning < 0 && stiler.radBeholdningNegativ]}>
+                    {item.beholdning} stk
+                  </Text>
+                  {item.reservert > 0 && (
+                    <Text style={stiler.radTilgjengelig}>{item.tilgjengelig} tilgjengelig</Text>
+                  )}
+                </View>
               </View>
-              <View style={stiler.radTall}>
-                <Text style={[stiler.radBeholdning, item.beholdning < 0 && stiler.radBeholdningNegativ]}>
-                  {item.beholdning} stk
-                </Text>
-                {item.reservert > 0 && (
-                  <Text style={stiler.radTilgjengelig}>{item.tilgjengelig} tilgjengelig</Text>
-                )}
-              </View>
-            </View>
-          </Kort>
+            </Kort>
+          </Pressable>
         )}
       />
 
@@ -219,6 +244,167 @@ export function BeholdningScreen() {
           }}
         />
       )}
+
+      {valgtVariantId && (
+        <VariantDetaljModal
+          variantId={valgtVariantId}
+          rader={rader}
+          varianter={varianter}
+          varer={varer}
+          merker={merker}
+          leverandorer={leverandorer}
+          lokasjoner={lokasjoner}
+          onBytt={setValgtVariantId}
+          onLukk={() => setValgtVariantId(null)}
+        />
+      )}
+    </View>
+  );
+}
+
+function VariantDetaljModal({
+  variantId,
+  rader,
+  varianter,
+  varer,
+  merker,
+  leverandorer,
+  lokasjoner,
+  onBytt,
+  onLukk,
+}: {
+  variantId: string;
+  rader: BeholdningVisningsrad[];
+  varianter: Variant[];
+  varer: Vare[];
+  merker: Merke[];
+  leverandorer: Leverandor[];
+  lokasjoner: Lokasjon[];
+  onBytt: (id: string) => void;
+  onLukk: () => void;
+}) {
+  const variant = varianter.find((v) => v.id === variantId) ?? null;
+  const vare = variant ? varer.find((v) => v.id === variant.vareId) ?? null : null;
+  const merke = variant?.merkeId ? merker.find((m) => m.id === variant.merkeId) ?? null : null;
+  const leverandor = vare ? leverandorer.find((l) => l.id === vare.leverandorId) ?? null : null;
+
+  const lokasjonNavn = (id: string) => lokasjoner.find((l) => l.id === id)?.navn ?? "Ukjent lokasjon";
+  const perLokasjon = rader.filter((r) => r.variantId === variantId);
+  const totalBeholdning = perLokasjon.reduce((s, r) => s + r.beholdning, 0);
+  const totalReservert = perLokasjon.reduce((s, r) => s + r.reservert, 0);
+  const totalTilgjengelig = perLokasjon.reduce((s, r) => s + r.tilgjengelig, 0);
+
+  const søsken = variant
+    ? varianter
+        .filter((v) => v.vareId === variant.vareId && v.id !== variant.id)
+        .map((v) => ({
+          v,
+          beholdning: rader.filter((r) => r.variantId === v.id).reduce((s, r) => s + r.beholdning, 0),
+        }))
+    : [];
+
+  const attributter = variant
+    ? Object.entries(variant.attributter).filter(
+        ([, val]) => typeof val === "string" || typeof val === "number",
+      )
+    : [];
+
+  return (
+    <Modal visible transparent animationType="slide" onRequestClose={onLukk}>
+      <Pressable style={stiler.modalBakgrunn} onPress={onLukk}>
+        <Pressable style={stiler.detaljKort} onPress={(e) => e.stopPropagation()}>
+          <ScrollView contentContainerStyle={stiler.detaljInnhold} showsVerticalScrollIndicator={false}>
+            <View style={stiler.detaljBildeBoks}>
+              {variant?.bildeurl ? (
+                <Image source={{ uri: variant.bildeurl }} style={stiler.detaljBilde} resizeMode="contain" />
+              ) : (
+                <Miniatyr url={null} bokstav={vare?.navn ?? variant?.sku ?? "?"} storrelse={200} />
+              )}
+            </View>
+
+            <Text style={stiler.detaljTittel}>{vare?.navn ?? "Ukjent artikkel"}</Text>
+
+            <View style={stiler.detaljFakta}>
+              <DetaljRad etikett="SKU" verdi={variant?.sku ?? "—"} />
+              <DetaljRad etikett="Kategori" verdi={vare?.kategori ?? "—"} />
+              <DetaljRad etikett="Merke" verdi={merke?.navn ?? "Uten merke"} bilde={merke?.logoUrl} />
+              <DetaljRad etikett="Leverandør" verdi={leverandor?.navn ?? "—"} />
+              <DetaljRad
+                etikett="Pris pr enhet"
+                verdi={variant?.verdiOre != null ? formatterKroner(variant.verdiOre) : "Ikke satt"}
+              />
+              {attributter.map(([k, val]) => (
+                <DetaljRad key={k} etikett={k} verdi={String(val)} />
+              ))}
+            </View>
+
+            <Text style={stiler.detaljSeksjon}>Beholdning</Text>
+            <View style={stiler.detaljFakta}>
+              <DetaljRad etikett="Totalt fysisk" verdi={`${totalBeholdning} stk`} />
+              {totalReservert > 0 && <DetaljRad etikett="Reservert" verdi={`${totalReservert} stk`} />}
+              {totalReservert > 0 && (
+                <DetaljRad etikett="Tilgjengelig" verdi={`${totalTilgjengelig} stk`} />
+              )}
+            </View>
+
+            {perLokasjon.length > 0 && (
+              <>
+                <Text style={stiler.detaljSeksjon}>Per lokasjon</Text>
+                <View style={stiler.detaljFakta}>
+                  {perLokasjon.map((r) => (
+                    <DetaljRad
+                      key={r.lokasjonId}
+                      etikett={lokasjonNavn(r.lokasjonId)}
+                      verdi={
+                        r.reservert > 0
+                          ? `${r.beholdning} stk (${r.tilgjengelig} tilgj.)`
+                          : `${r.beholdning} stk`
+                      }
+                    />
+                  ))}
+                </View>
+              </>
+            )}
+
+            {søsken.length > 0 && (
+              <>
+                <Text style={stiler.detaljSeksjon}>Andre varianter av samme artikkel</Text>
+                <View style={{ gap: 8 }}>
+                  {søsken.map(({ v, beholdning }) => (
+                    <Pressable key={v.id} style={stiler.sosken} onPress={() => onBytt(v.id)}>
+                      <Miniatyr url={v.bildeurl} bokstav={v.sku} storrelse={36} />
+                      <Text style={stiler.soskenTekst}>{v.sku}</Text>
+                      <Text style={stiler.soskenTall}>{beholdning} stk</Text>
+                    </Pressable>
+                  ))}
+                </View>
+              </>
+            )}
+
+            <Knapp tittel="Lukk" onPress={onLukk} variant="sekundaer" />
+          </ScrollView>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
+function DetaljRad({
+  etikett,
+  verdi,
+  bilde,
+}: {
+  etikett: string;
+  verdi: string;
+  bilde?: string | null;
+}) {
+  return (
+    <View style={stiler.detaljRad}>
+      <Text style={stiler.detaljEtikett}>{etikett}</Text>
+      <View style={stiler.detaljVerdiBoks}>
+        {bilde ? <Miniatyr url={bilde} bokstav={verdi} storrelse={22} /> : null}
+        <Text style={stiler.detaljVerdi}>{verdi}</Text>
+      </View>
     </View>
   );
 }
@@ -347,6 +533,7 @@ const stiler = StyleSheet.create({
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.45)",
     justifyContent: "flex-end",
+    alignItems: "center",
   },
   modalKort: {
     backgroundColor: "#fff",
@@ -354,6 +541,91 @@ const stiler = StyleSheet.create({
     borderTopRightRadius: 16,
     padding: 20,
     gap: 14,
+    width: "100%",
+    maxWidth: 480,
+  },
+  detaljKort: {
+    backgroundColor: "#fff",
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    width: "100%",
+    maxWidth: 480,
+    maxHeight: "92%",
+  },
+  detaljInnhold: {
+    padding: 20,
+    gap: 12,
+  },
+  detaljBildeBoks: {
+    alignItems: "center",
+    paddingVertical: 8,
+  },
+  detaljBilde: {
+    width: 220,
+    height: 220,
+    borderRadius: 12,
+    backgroundColor: "#f4f4f4",
+  },
+  detaljTittel: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: farger.tekst,
+  },
+  detaljFakta: {
+    gap: 2,
+  },
+  detaljSeksjon: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#999",
+    textTransform: "uppercase",
+    marginTop: 8,
+  },
+  detaljRad: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: "#f0f0f0",
+    gap: 12,
+  },
+  detaljEtikett: {
+    fontSize: 13,
+    color: "#888",
+    textTransform: "capitalize",
+  },
+  detaljVerdiBoks: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    flexShrink: 1,
+  },
+  detaljVerdi: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: farger.tekst,
+    textAlign: "right",
+  },
+  sosken: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    padding: 8,
+    borderRadius: 8,
+    backgroundColor: "#fafafa",
+    borderWidth: 1,
+    borderColor: "#eee",
+  },
+  soskenTekst: {
+    flex: 1,
+    fontSize: 14,
+    color: farger.tekst,
+  },
+  soskenTall: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: farger.primaer,
   },
   modalTittel: {
     fontSize: 17,
