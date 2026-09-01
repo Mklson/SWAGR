@@ -69,6 +69,17 @@ export function settOkt(nyToken: string, nyBruker: InnloggetBruker, nyeBedrifter
   varsle();
 }
 
+/** Oppdater bedriftslista (f.eks. etter endret logo) uten å røre token. */
+export function settBedrifter(nyeBedrifter: Bedrift[]): void {
+  bedrifter = nyeBedrifter;
+  lagreVerdi(BEDRIFTER_NOKKEL, JSON.stringify(nyeBedrifter));
+  if (!nyeBedrifter.some((b) => b.id === aktivBedriftId)) {
+    aktivBedriftId = nyeBedrifter[0]?.id ?? null;
+    if (aktivBedriftId) lagreVerdi(AKTIV_BEDRIFT_NOKKEL, aktivBedriftId);
+  }
+  varsle();
+}
+
 export function settAktivBedrift(id: string): void {
   if (!bedrifter.some((b) => b.id === id) || id === aktivBedriftId) return;
   aktivBedriftId = id;

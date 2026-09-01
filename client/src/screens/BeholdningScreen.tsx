@@ -1,9 +1,28 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { RefreshControl, SectionList, StyleSheet, Text, TextInput, View } from "react-native";
-import { hentBeholdning, listLokasjoner, listMerker, listVarer, listVarianter } from "../api";
+import {
+  Modal,
+  Pressable,
+  RefreshControl,
+  SectionList,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
+import {
+  ApiFeil,
+  gjenkjennVariant,
+  hentBeholdning,
+  listLokasjoner,
+  listMerker,
+  listVarer,
+  listVarianter,
+} from "../api";
+import { taBilde, type KomprimertBilde } from "../lib/bilde";
+import { KATEGORIER } from "../lib/kategorier";
 import { ALLE_KATEGORIER, MerkeOgKategoriFilter, UTEN_MERKE } from "../components/VareFilter";
-import type { BeholdningRad, Lokasjon, Merke, Vare, Variant } from "../types";
-import { farger, FeilBanner, Kort, Miniatyr, TomListeTekst } from "../components/ui";
+import type { BeholdningRad, Lokasjon, Merke, Vare, Variant, VariantGjenkjenningResultat } from "../types";
+import { farger, FeilBanner, Knapp, Kort, Miniatyr, TomListeTekst } from "../components/ui";
 
 interface BeholdningVisningsrad extends BeholdningRad {
   variantNavn: string;
@@ -23,6 +42,7 @@ export function BeholdningScreen() {
   const [valgtMerke, setValgtMerke] = useState<string | null>(null);
   const [valgtKategori, setValgtKategori] = useState<string>(ALLE_KATEGORIER);
   const [søk, setSøk] = useState("");
+  const [kameraÅpen, setKameraÅpen] = useState(false);
 
   const lastInn = useCallback(async () => {
     setFeil(null);
@@ -80,9 +100,10 @@ export function BeholdningScreen() {
   }, [rader, merker]);
   const harUtenMerke = useMemo(() => rader.some((r) => !r.merkeId), [rader]);
   const kategoriAlternativer = useMemo(() => {
-    const sett = new Set<string>();
-    for (const r of rader) if (r.kategori) sett.add(r.kategori);
-    return Array.from(sett).sort((a, b) => a.localeCompare(b));
+    const iData = new Set<string>();
+    for (const r of rader) if (r.kategori) iData.add(r.kategori);
+    const ekstra = [...iData].filter((k) => !KATEGORIER.includes(k as never)).sort();
+    return [...KATEGORIER, ...ekstra];
   }, [rader]);
 
   const filtrerteRader = useMemo(() => {
@@ -124,15 +145,6 @@ export function BeholdningScreen() {
         <Text style={stiler.undertekst}>Nåværende antall per variant og lokasjon</Text>
       </View>
 
-      <View style={stiler.søkRad}>
-        <TextInput
-          style={stiler.søkInput}
-          value={søk}
-          onChangeText={setSøk}
-          placeholder="Søk artikkel, SKU eller merke..."
-        />
-      </View>
-
       <MerkeOgKategoriFilter
         idPrefiks="beholdning"
         merkeAlternativer={merkeAlternativer}
@@ -143,6 +155,18 @@ export function BeholdningScreen() {
         valgtKategori={valgtKategori}
         onValgtKategoriChange={setValgtKategori}
       />
+
+      <View style={stiler.søkRad}>
+        <TextInput
+          style={stiler.søkInput}
+          value={søk}
+          onChangeText={setSøk}
+          placeholder="Søk artikkel, SKU eller merke..."
+        />
+        <Pressable style={stiler.kameraKnapp} onPress={() => setKameraÅpen(true)}>
+          <Text style={stiler.kameraKnappTekst}>📷 Ta bilde av en artikkel for å finne den</Text>
+        </Pressable>
+      </View>
 
       {feil && <FeilBanner tekst={feil} />}
 
@@ -183,7 +207,96 @@ export function BeholdningScreen() {
           </Kort>
         )}
       />
+
+      {kameraÅpen && (
+        <BeholdningKameraModal
+          onLukk={() => setKameraÅpen(false)}
+          onFunnet={(sku) => {
+            setSøk(sku);
+            setValgtMerke(null);
+            setValgtKategori(ALLE_KATEGORIER);
+            setKameraÅpen(false);
+          }}
+        />
+      )}
     </View>
+  );
+}
+
+function BeholdningKameraModal({
+  onLukk,
+  onFunnet,
+}: {
+  onLukk: () => void;
+  onFunnet: (sku: string) => void;
+}) {
+  const [laster, setLaster] = useState(false);
+  const [feil, setFeil] = useState<string | null>(null);
+  const [resultat, setResultat] = useState<VariantGjenkjenningResultat | null>(null);
+
+  async function skann() {
+    setFeil(null);
+    setResultat(null);
+    let bilde: KomprimertBilde | null;
+    try {
+      bilde = await taBilde();
+    } catch (err) {
+      setFeil(err instanceof Error ? `Kunne ikke behandle bildet: ${err.message}` : "Kunne ikke behandle bildet.");
+      return;
+    }
+    if (!bilde) return;
+
+    setLaster(true);
+    try {
+      const svar = await gjenkjennVariant(bilde.base64, "image/jpeg");
+      const treff = svar.kandidater;
+      if (treff.length === 1) {
+        onFunnet(treff[0].sku);
+        return;
+      }
+      setResultat(svar);
+    } catch (err) {
+      if (err instanceof ApiFeil && err.status === 503) {
+        setFeil("Bildegjenkjenning er ikke konfigurert på serveren ennå.");
+      } else {
+        setFeil(err instanceof ApiFeil ? err.message : "Kunne ikke koble til serveren.");
+      }
+    } finally {
+      setLaster(false);
+    }
+  }
+
+  return (
+    <Modal visible transparent animationType="slide" onRequestClose={onLukk}>
+      <Pressable style={stiler.modalBakgrunn} onPress={onLukk}>
+        <Pressable style={stiler.modalKort} onPress={(e) => e.stopPropagation()}>
+          <Text style={stiler.modalTittel}>Finn artikkel via bilde</Text>
+          <Knapp tittel="Åpne kamera" onPress={skann} disabled={laster} variant="sekundaer" />
+
+          {feil && <FeilBanner tekst={feil} />}
+
+          {resultat && resultat.kandidater.length > 1 && (
+            <View style={stiler.kandidatListe}>
+              <Text style={stiler.radLokasjon}>Flere mulige treff — velg riktig:</Text>
+              {resultat.kandidater.map((k) => (
+                <Pressable key={k.id} style={stiler.kandidatRad} onPress={() => onFunnet(k.sku)}>
+                  <Text style={stiler.radTittel}>{k.navn}</Text>
+                  <Text style={stiler.radLokasjon}>{k.sku}</Text>
+                </Pressable>
+              ))}
+            </View>
+          )}
+
+          {resultat && resultat.kandidater.length === 0 && (
+            <Text style={stiler.radLokasjon}>
+              Ingen artikkel i beholdningen matcher bildet ({resultat.varetype}).
+            </Text>
+          )}
+
+          <Knapp tittel="Lukk" onPress={onLukk} variant="sekundaer" disabled={laster} />
+        </Pressable>
+      </Pressable>
+    </Modal>
   );
 }
 
@@ -209,6 +322,7 @@ const stiler = StyleSheet.create({
   søkRad: {
     paddingHorizontal: 16,
     marginBottom: 12,
+    gap: 8,
   },
   søkInput: {
     borderWidth: 1,
@@ -217,6 +331,45 @@ const stiler = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 10,
     fontSize: 15,
+  },
+  kameraKnapp: {
+    paddingVertical: 9,
+    alignItems: "center",
+    backgroundColor: "#eef3f0",
+    borderRadius: 8,
+  },
+  kameraKnappTekst: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: farger.primaer,
+  },
+  modalBakgrunn: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.45)",
+    justifyContent: "flex-end",
+  },
+  modalKort: {
+    backgroundColor: "#fff",
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    padding: 20,
+    gap: 14,
+  },
+  modalTittel: {
+    fontSize: 17,
+    fontWeight: "700",
+    color: farger.tekst,
+  },
+  kandidatListe: {
+    gap: 8,
+  },
+  kandidatRad: {
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    backgroundColor: "#fafafa",
+    borderWidth: 1,
+    borderColor: "#eee",
   },
   liste: {
     paddingHorizontal: 16,

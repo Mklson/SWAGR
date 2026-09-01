@@ -125,6 +125,9 @@ export interface MegSvar {
 
 export const hentMeg = () => forespørsel<MegSvar>("/api/auth/meg");
 
+export const oppdaterBedrift = (data: { navn?: string; logoUrl?: string | null }) =>
+  patch<{ id: string; navn: string; logoUrl: string | null }>("/api/bedrift", data);
+
 export const listLeverandorer = () => list<Leverandor>("/api/leverandorer");
 export const opprettLeverandor = (data: { navn: string }) =>
   create<Leverandor>("/api/leverandorer", data);

@@ -7,6 +7,7 @@ import { authRoutes } from "./routes/auth.js";
 import { inviterteRoutes } from "./routes/inviterte.js";
 import { bilderRoutes } from "./routes/bilder.js";
 import { formaalRoutes } from "./routes/formaal.js";
+import { bedriftRoutes } from "./routes/bedrift.js";
 import { leverandorerRoutes } from "./routes/leverandorer.js";
 import { varerRoutes } from "./routes/varer.js";
 import { variantRoutes } from "./routes/varianter.js";
@@ -63,6 +64,7 @@ export async function buildServer(valg: BuildServerValg = {}) {
   inviterteRoutes(app);
   bilderRoutes(app);
   formaalRoutes(app);
+  bedriftRoutes(app);
   leverandorerRoutes(app);
   varerRoutes(app);
   variantRoutes(app);

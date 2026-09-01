@@ -7,7 +7,7 @@ interface BrukerMedBedrifter {
   id: string;
   navn: string;
   epost: string | null;
-  bedrifter: { bedriftId: string; rolle: string; bedrift: { navn: string } }[];
+  bedrifter: { bedriftId: string; rolle: string; bedrift: { navn: string; logoUrl: string | null } }[];
 }
 
 function svarForBruker(app: FastifyInstance, b: BrukerMedBedrifter) {
@@ -17,6 +17,7 @@ function svarForBruker(app: FastifyInstance, b: BrukerMedBedrifter) {
     bedrifter: b.bedrifter.map((m) => ({
       id: m.bedriftId,
       navn: m.bedrift.navn,
+      logoUrl: m.bedrift.logoUrl,
       rolle: m.rolle,
     })),
   };
@@ -108,6 +109,7 @@ export function authRoutes(app: FastifyInstance) {
         bedrifter: bruker.bedrifter.map((m) => ({
           id: m.bedriftId,
           navn: m.bedrift.navn,
+          logoUrl: m.bedrift.logoUrl,
           rolle: m.rolle,
         })),
         aktivBedriftId: request.bedriftId,

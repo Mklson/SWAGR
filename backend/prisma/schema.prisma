@@ -38,6 +38,7 @@ enum KontekstType {
 model Bedrift {
   id        String   @id @default(uuid())
   navn      String   @unique
+  logoUrl   String?  @map("logo_url")
   opprettet DateTime @default(now())
 
   medlemmer     BrukerBedrift[]

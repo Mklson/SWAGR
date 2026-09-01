@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Modal, Platform, Pressable, StyleSheet, Text, View } from "react-native";
+import { Image, Modal, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { BeholdningScreen } from "./src/screens/BeholdningScreen";
 import { HurtigScreen } from "./src/screens/HurtigScreen";
@@ -90,6 +90,12 @@ function AutentisertApp() {
 
   return (
     <>
+      {aktivBedrift?.logoUrl ? (
+        <View style={stiler.logoBar}>
+          <Image source={{ uri: aktivBedrift.logoUrl }} style={stiler.logo} resizeMode="contain" />
+        </View>
+      ) : null}
+
       {aktivBedrift && (
         <Pressable
           style={stiler.bedriftBar}
@@ -159,6 +165,16 @@ const stiler = StyleSheet.create({
     flex: 1,
     backgroundColor: "#fff",
     ...(Platform.OS === "web" ? { maxWidth: 480, marginHorizontal: "auto" as never, width: "100%" } : {}),
+  },
+  logoBar: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 10,
+    backgroundColor: "#fff",
+  },
+  logo: {
+    height: 44,
+    width: "70%",
   },
   bedriftBar: {
     backgroundColor: farger.primaer,

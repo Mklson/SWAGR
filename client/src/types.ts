@@ -72,6 +72,7 @@ export interface Bruker {
 export interface Bedrift {
   id: string;
   navn: string;
+  logoUrl?: string | null;
   rolle: string;
 }
 

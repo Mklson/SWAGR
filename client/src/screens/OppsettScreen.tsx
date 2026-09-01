@@ -1,13 +1,16 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ScrollView, StyleSheet, Text, View } from "react-native";
+import { Image, ScrollView, StyleSheet, Text, View } from "react-native";
 import {
   ApiFeil,
+  hentMeg,
+  lastOppBilde,
   listBrukere,
   listFormaal,
   listKontekster,
   listLeverandorer,
   listLokasjoner,
   listMerker,
+  oppdaterBedrift,
   opprettBruker,
   opprettFormaal,
   opprettKontekst,
@@ -17,6 +20,8 @@ import {
 } from "../api";
 import { gjettKolonne, parseCsv } from "../lib/csv";
 import { velgTekstfil } from "../lib/nettleserFil";
+import { hentAktivBedrift, hentAktivRolle, settBedrifter } from "../lib/auth";
+import { BildeVelger } from "../components/BildeVelger";
 import type { Bruker, Formaal, Kontekst, Leverandor, Lokasjon, Merke } from "../types";
 import {
   FeilBanner,
@@ -70,6 +75,12 @@ export function OppsettScreen() {
       <Text style={stiler.tittel}>Oppsett</Text>
       <Text style={stiler.undertekst}>Referansedata brukt ved registrering av bevegelser</Text>
 
+      {hentAktivRolle() === "admin" && (
+        <Sammenleggbar tittel="Bedrift" apen={apen === "bedrift"} onToggle={() => toggle("bedrift")}>
+          <BedriftSeksjon />
+        </Sammenleggbar>
+      )}
+
       <Sammenleggbar tittel="Leverandører" apen={apen === "leverandor"} onToggle={() => toggle("leverandor")}>
         <LeverandorSeksjon leverandorer={leverandorer} onLagtTil={lastInn} />
       </Sammenleggbar>
@@ -96,6 +107,90 @@ export function OppsettScreen() {
         <BrukerSeksjon brukere={brukere} onLagtTil={lastInn} />
       </Sammenleggbar>
     </ScrollView>
+  );
+}
+
+function BedriftSeksjon() {
+  const bedrift = hentAktivBedrift();
+  const [navn, setNavn] = useState(bedrift?.navn ?? "");
+  const [logoUrl, setLogoUrl] = useState<string | null>(bedrift?.logoUrl ?? null);
+  const [bildeLaster, setBildeLaster] = useState(false);
+  const [feil, setFeil] = useState<string | null>(null);
+  const [suksess, setSuksess] = useState<string | null>(null);
+  const [laster, setLaster] = useState(false);
+
+  async function oppdaterFraServer() {
+    const meg = await hentMeg();
+    settBedrifter(meg.bedrifter);
+  }
+
+  async function bildeValgt(bilde: { base64: string }) {
+    setFeil(null);
+    setBildeLaster(true);
+    try {
+      const { url } = await lastOppBilde(bilde.base64);
+      await oppdaterBedrift({ logoUrl: url });
+      setLogoUrl(url);
+      await oppdaterFraServer();
+      setSuksess("Logo oppdatert.");
+    } catch (err) {
+      setFeil(err instanceof Error ? `Logo feilet: ${err.message}` : "Kunne ikke laste opp logoen.");
+    } finally {
+      setBildeLaster(false);
+    }
+  }
+
+  async function lagreNavn() {
+    setFeil(null);
+    setSuksess(null);
+    if (!navn.trim()) {
+      setFeil("Fyll ut bedriftsnavn.");
+      return;
+    }
+    setLaster(true);
+    try {
+      await oppdaterBedrift({ navn: navn.trim() });
+      await oppdaterFraServer();
+      setSuksess("Navn lagret.");
+    } catch (err) {
+      setFeil(err instanceof ApiFeil ? err.message : "Kunne ikke lagre navnet.");
+    } finally {
+      setLaster(false);
+    }
+  }
+
+  async function fjernLogo() {
+    setBildeLaster(true);
+    try {
+      await oppdaterBedrift({ logoUrl: null });
+      setLogoUrl(null);
+      await oppdaterFraServer();
+    } catch (err) {
+      setFeil(err instanceof ApiFeil ? err.message : "Kunne ikke fjerne logoen.");
+    } finally {
+      setBildeLaster(false);
+    }
+  }
+
+  return (
+    <View style={stiler.seksjonInnhold}>
+      <Text style={stiler.hjelpetekst}>Navn og logo. Logoen vises øverst i appen for alle i bedriften.</Text>
+      <TekstFelt label="Bedriftsnavn" value={navn} onChangeText={setNavn} />
+      <Knapp tittel="Lagre navn" onPress={lagreNavn} disabled={laster} variant="sekundaer" />
+
+      {logoUrl ? (
+        <View style={stiler.logoForhandsvisning}>
+          <Image source={{ uri: logoUrl }} style={stiler.logoBilde} resizeMode="contain" />
+        </View>
+      ) : null}
+      <BildeVelger laster={bildeLaster} onValgt={bildeValgt} onFeil={setFeil} />
+      {logoUrl ? (
+        <Knapp tittel="Fjern logo" onPress={fjernLogo} disabled={bildeLaster} variant="sekundaer" />
+      ) : null}
+
+      {feil && <FeilBanner tekst={feil} />}
+      {suksess && <Text style={stiler.resultatTekst}>{suksess}</Text>}
+    </View>
   );
 }
 
@@ -629,5 +724,15 @@ const stiler = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
+  },
+  logoForhandsvisning: {
+    alignItems: "center",
+    paddingVertical: 8,
+    backgroundColor: "#fafafa",
+    borderRadius: 8,
+  },
+  logoBilde: {
+    height: 56,
+    width: "70%",
   },
 });

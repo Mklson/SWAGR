@@ -144,6 +144,13 @@ export const formaalCreateSchema = z.object({
   navn: z.string().min(1),
 });
 
+export const bedriftUpdateSchema = z
+  .object({
+    navn: z.string().min(1),
+    logoUrl: z.string().url().nullable(),
+  })
+  .partial();
+
 export const reservasjonListQuerySchema = z.object({
   variantId: z.string().uuid().optional(),
   lokasjonId: z.string().uuid().optional(),
