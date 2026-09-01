@@ -1404,6 +1404,7 @@ const stiler = StyleSheet.create({
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.45)",
     justifyContent: "flex-end",
+    alignItems: "center",
   },
   modalKort: {
     backgroundColor: "#fff",
@@ -1411,6 +1412,11 @@ const stiler = StyleSheet.create({
     borderTopRightRadius: 16,
     padding: 20,
     gap: 16,
+    // Hold samme bredde som resten av appen - RN Modal rendrer utenfor
+    // 960px-rammen, så uten dette blir arket skjermbredt på PC.
+    width: "100%",
+    maxWidth: 480,
+    alignSelf: "center",
   },
   modalHeader: {
     flexDirection: "row",
