@@ -73,6 +73,7 @@ export interface FakturaTolkningResultat {
 }
 
 export async function foreslaBevegelser(
+  bedriftId: string,
   fil: string,
   mediaType: FakturaMediaType,
   lokasjonId: string,
@@ -83,7 +84,7 @@ export async function foreslaBevegelser(
   // som semantisk gjelder utgående bevegelser.
   const tillatteTyper = ekstrahert.retning === "inn" ? ["innkjop", "retur"] : ["kunde", "prosjekt", "internbruk"];
   const kontekstKandidater = kontekstSoketekst
-    ? (await sokKontekst(kontekstSoketekst)).filter((k) => tillatteTyper.includes(k.type))
+    ? (await sokKontekst(bedriftId, kontekstSoketekst)).filter((k) => tillatteTyper.includes(k.type))
     : [];
 
   const merknader: string[] = [];
@@ -97,7 +98,7 @@ export async function foreslaBevegelser(
 
   const forslag: FakturaLinjeForslag[] = [];
   for (const linje of ekstrahert.linjer) {
-    const variantTreff = await sokVariant(linje.vareBeskrivelse);
+    const variantTreff = await sokVariant(bedriftId, linje.vareBeskrivelse);
     forslag.push({
       raLinje: linje.vareBeskrivelse,
       antall: linje.antall,

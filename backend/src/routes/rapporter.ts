@@ -22,7 +22,7 @@ export function rapporterRoutes(app: FastifyInstance) {
       if (!queryParsed.success) {
         return reply.status(400).send({ error: queryParsed.error.flatten() });
       }
-      return beregnRapportKontekst(paramsParsed.data.kontekstId, queryParsed.data);
+      return beregnRapportKontekst(paramsParsed.data.kontekstId, { ...queryParsed.data, bedriftId: request.bedriftId });
     },
   );
 
@@ -36,7 +36,7 @@ export function rapporterRoutes(app: FastifyInstance) {
       if (!parsed.success) {
         return reply.status(400).send({ error: parsed.error.flatten() });
       }
-      return beregnRapportPeriode(parsed.data);
+      return beregnRapportPeriode({ ...parsed.data, bedriftId: request.bedriftId });
     },
   );
 
@@ -51,7 +51,7 @@ export function rapporterRoutes(app: FastifyInstance) {
       if (!parsed.success) {
         return reply.status(400).send({ error: parsed.error.flatten() });
       }
-      return beregnRapportFleksibel(parsed.data);
+      return beregnRapportFleksibel({ ...parsed.data, bedriftId: request.bedriftId });
     },
   );
 }

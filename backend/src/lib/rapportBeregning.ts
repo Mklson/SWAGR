@@ -17,10 +17,11 @@ function periodeWhere({ fra, til }: Periode) {
 }
 
 /** Summerer aktive reservasjoner per variant+lokasjon (nøkkel: "variantId:lokasjonId"). */
-async function hentReservertKart(filter: { variantId?: string; lokasjonId?: string }) {
+async function hentReservertKart(filter: { bedriftId: string; variantId?: string; lokasjonId?: string }) {
   const reservasjoner = await prisma.reservasjon.findMany({
     where: {
       status: "aktiv",
+      bedriftId: filter.bedriftId,
       ...(filter.variantId ? { variantId: filter.variantId } : {}),
       ...(filter.lokasjonId ? { lokasjonId: filter.lokasjonId } : {}),
     },
@@ -34,10 +35,15 @@ async function hentReservertKart(filter: { variantId?: string; lokasjonId?: stri
   return kart;
 }
 
-export async function beregnBeholdning(filter: { variantId?: string; lokasjonId?: string }) {
+export async function beregnBeholdning(filter: {
+  bedriftId: string;
+  variantId?: string;
+  lokasjonId?: string;
+}) {
   const [bevegelser, reservertKart] = await Promise.all([
     prisma.bevegelse.findMany({
       where: {
+        bedriftId: filter.bedriftId,
         ...(filter.variantId ? { variantId: filter.variantId } : {}),
         ...(filter.lokasjonId ? { lokasjonId: filter.lokasjonId } : {}),
       },
@@ -84,10 +90,11 @@ export async function beregnTilgjengelighet(variantId: string, lokasjonId: strin
 
 export async function beregnRapportKontekst(
   kontekstId: string,
-  filter: { variantId?: string } & Periode,
+  filter: { bedriftId: string; variantId?: string } & Periode,
 ) {
   const bevegelser = await prisma.bevegelse.findMany({
     where: {
+      bedriftId: filter.bedriftId,
       kontekstId,
       ...(filter.variantId ? { variantId: filter.variantId } : {}),
       ...periodeWhere(filter),
@@ -133,10 +140,11 @@ export async function beregnRapportKontekst(
  * av alle kunder" / "verdi for kunde Y på tvers av alle merker" uten å måtte
  * velge én av dem på forhånd slik de andre rapportene krever. */
 export async function beregnRapportFleksibel(
-  filter: { kontekstId?: string; merkeId?: string } & Periode,
+  filter: { bedriftId: string; kontekstId?: string; merkeId?: string } & Periode,
 ) {
   const bevegelser = await prisma.bevegelse.findMany({
     where: {
+      bedriftId: filter.bedriftId,
       ...(filter.kontekstId ? { kontekstId: filter.kontekstId } : {}),
       ...(filter.merkeId ? { variant: { merkeId: filter.merkeId } } : {}),
       ...periodeWhere(filter),
@@ -181,10 +189,11 @@ export async function beregnRapportFleksibel(
 }
 
 export async function beregnRapportPeriode(
-  filter: { variantId?: string; lokasjonId?: string; kontekstId?: string } & Periode,
+  filter: { bedriftId: string; variantId?: string; lokasjonId?: string; kontekstId?: string } & Periode,
 ) {
   const bevegelser = await prisma.bevegelse.findMany({
     where: {
+      bedriftId: filter.bedriftId,
       ...(filter.variantId ? { variantId: filter.variantId } : {}),
       ...(filter.lokasjonId ? { lokasjonId: filter.lokasjonId } : {}),
       ...(filter.kontekstId ? { kontekstId: filter.kontekstId } : {}),

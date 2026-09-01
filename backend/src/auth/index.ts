@@ -1,37 +1,43 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import fastifyJwt from "@fastify/jwt";
 import { prisma } from "../db/client.js";
+import { STANDARD_BEDRIFT_ID } from "../db/systemdata.js";
 import { hashPassord } from "./passord.js";
 
-// Stier som er tilgjengelige uten innlogging: helsesjekk, API-dok og selve
-// innloggings-/registreringsendepunktene.
+// Stier som er tilgjengelige uten innlogging.
 const APNE_STIER = [/^\/health$/, /^\/docs(\/|$)/, /^\/api\/auth\/(logg-inn|registrer)$/];
 
 export interface AuthBruker {
   id: string;
   navn: string;
-  rolle: string;
   epost: string;
 }
 
 declare module "fastify" {
   interface FastifyRequest {
     bruker?: AuthBruker;
+    // Aktiv bedrift for forespørselen + brukerens rolle i den.
+    bedriftId: string;
+    rolle: string;
   }
 }
 
 declare module "@fastify/jwt" {
   interface FastifyJWT {
-    payload: { sub: string; rolle: string };
-    user: { sub: string; rolle: string };
+    payload: { sub: string };
+    user: { sub: string };
   }
 }
 
 /**
- * Registrerer JWT-plugin og - nar krevAuth er sann - en global onRequest-hook
- * som avviser alle ikke-apne stier uten gyldig token. Slas av i tester.
+ * Registrerer JWT-plugin og en global onRequest-hook som setter
+ * request.bedriftId / request.rolle (og request.bruker når innlogget).
+ * Med krevAuth=false (tester) brukes standardbedriften og rolle "admin".
  */
 export async function registrerAuth(app: FastifyInstance, krevAuth: boolean) {
+  app.decorateRequest("bedriftId", STANDARD_BEDRIFT_ID);
+  app.decorateRequest("rolle", "admin");
+
   await app.register(fastifyJwt, {
     secret: process.env.JWT_HEMMELIGHET ?? "utrygg-lokal-nokkel",
   });
@@ -42,28 +48,37 @@ export async function registrerAuth(app: FastifyInstance, krevAuth: boolean) {
     const sti = request.url.split("?")[0];
     if (APNE_STIER.some((re) => re.test(sti))) return;
 
+    let payload: { sub: string };
     try {
-      const payload = await request.jwtVerify<{ sub: string }>();
-      const bruker = await prisma.bruker.findUnique({ where: { id: payload.sub } });
-      if (!bruker || !bruker.epost) {
-        return reply.code(401).send({ error: "Ugyldig okt - logg inn pa nytt." });
-      }
-      request.bruker = {
-        id: bruker.id,
-        navn: bruker.navn,
-        rolle: bruker.rolle,
-        epost: bruker.epost,
-      };
+      payload = await request.jwtVerify<{ sub: string }>();
     } catch {
       return reply.code(401).send({ error: "Innlogging kreves." });
     }
+
+    const bruker = await prisma.bruker.findUnique({
+      where: { id: payload.sub },
+      include: { bedrifter: true },
+    });
+    if (!bruker || !bruker.epost || bruker.bedrifter.length === 0) {
+      return reply.code(401).send({ error: "Ugyldig okt - logg inn pa nytt." });
+    }
+
+    // Aktiv bedrift: fra x-bedrift-id-header hvis gyldig medlemskap, ellers første.
+    const ønsket = request.headers["x-bedrift-id"];
+    const medlemskap =
+      (typeof ønsket === "string" && bruker.bedrifter.find((m) => m.bedriftId === ønsket)) ||
+      bruker.bedrifter[0];
+
+    request.bruker = { id: bruker.id, navn: bruker.navn, epost: bruker.epost };
+    request.bedriftId = medlemskap.bedriftId;
+    request.rolle = medlemskap.rolle;
   });
 }
 
-/** preHandler som krever at innlogget bruker har en bestemt rolle. */
+/** preHandler som krever en bestemt rolle i den aktive bedriften. */
 export function krevRolle(rolle: string) {
   return async (request: FastifyRequest, reply: FastifyReply) => {
-    if (request.bruker?.rolle !== rolle) {
+    if (request.rolle !== rolle) {
       return reply.code(403).send({ error: "Krever rollen: " + rolle });
     }
   };
@@ -71,7 +86,7 @@ export function krevRolle(rolle: string) {
 
 /**
  * Oppretter forste admin-bruker fra ADMIN_EPOST/ADMIN_PASSORD hvis den ikke
- * finnes. Kalt ved oppstart. Hopper over (med advarsel) hvis env mangler.
+ * finnes, og gjør den til admin i standardbedriften. Kalt ved oppstart.
  */
 export async function sikreAdmin() {
   const epost = process.env.ADMIN_EPOST?.trim().toLowerCase();
@@ -81,17 +96,21 @@ export async function sikreAdmin() {
     return;
   }
 
-  const finnes = await prisma.bruker.findUnique({ where: { epost } });
-  if (finnes) return;
+  let bruker = await prisma.bruker.findUnique({ where: { epost } });
+  if (!bruker) {
+    const passordHash = await hashPassord(passord);
+    bruker = await prisma.bruker.create({ data: { navn: "Administrator", epost, passordHash } });
+  }
 
-  const passordHash = await hashPassord(passord);
-  await prisma.bruker.create({
-    data: { navn: "Administrator", rolle: "admin", epost, passordHash },
+  await prisma.brukerBedrift.upsert({
+    where: { brukerId_bedriftId: { brukerId: bruker.id, bedriftId: STANDARD_BEDRIFT_ID } },
+    update: { rolle: "admin" },
+    create: { brukerId: bruker.id, bedriftId: STANDARD_BEDRIFT_ID, rolle: "admin" },
   });
   await prisma.invitertEpost.upsert({
-    where: { epost },
+    where: { bedriftId_epost: { bedriftId: STANDARD_BEDRIFT_ID, epost } },
     update: { brukt: true },
-    create: { epost, rolle: "admin", brukt: true },
+    create: { bedriftId: STANDARD_BEDRIFT_ID, epost, rolle: "admin", brukt: true },
   });
-  console.log(`[auth] admin-bruker opprettet: ${epost}`);
+  console.log(`[auth] admin-bruker sikret: ${epost}`);
 }

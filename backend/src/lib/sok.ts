@@ -1,15 +1,16 @@
 import { prisma } from "../db/client.js";
 
-export async function sokKontekst(navn: string) {
+export async function sokKontekst(bedriftId: string, navn: string) {
   return prisma.kontekst.findMany({
-    where: { navn: { contains: navn, mode: "insensitive" } },
+    where: { bedriftId, navn: { contains: navn, mode: "insensitive" } },
     take: 10,
   });
 }
 
-export async function sokVariant(navnEllerSku: string) {
+export async function sokVariant(bedriftId: string, navnEllerSku: string) {
   return prisma.variant.findMany({
     where: {
+      bedriftId,
       OR: [
         { sku: { contains: navnEllerSku, mode: "insensitive" } },
         { vare: { navn: { contains: navnEllerSku, mode: "insensitive" } } },
@@ -20,9 +21,9 @@ export async function sokVariant(navnEllerSku: string) {
   });
 }
 
-export async function sokLokasjon(navn: string) {
+export async function sokLokasjon(bedriftId: string, navn: string) {
   return prisma.lokasjon.findMany({
-    where: { navn: { contains: navn, mode: "insensitive" } },
+    where: { bedriftId, navn: { contains: navn, mode: "insensitive" } },
     take: 10,
   });
 }

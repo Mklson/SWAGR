@@ -18,7 +18,7 @@ export function sporsmalRoutes(app: FastifyInstance) {
       }
 
       try {
-        return await besvarSporsmal(parsed.data.sporsmal);
+        return await besvarSporsmal(request.bedriftId, parsed.data.sporsmal);
       } catch (err) {
         request.log.error(err);
         return reply.status(502).send({ error: "Kunne ikke hente svar fra AI-tjenesten" });

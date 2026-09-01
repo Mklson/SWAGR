@@ -20,7 +20,7 @@ interface ToolKall {
   input: unknown;
 }
 
-function byggVerktoy(kall: ToolKall[]) {
+function byggVerktoy(bedriftId: string, kall: ToolKall[]) {
   return [
     betaZodTool({
       name: "sok_kontekst",
@@ -29,7 +29,7 @@ function byggVerktoy(kall: ToolKall[]) {
       inputSchema: z.object({ navn: z.string() }),
       run: async (input) => {
         kall.push({ navn: "sok_kontekst", input });
-        return JSON.stringify(await sokKontekst(input.navn));
+        return JSON.stringify(await sokKontekst(bedriftId, input.navn));
       },
     }),
     betaZodTool({
@@ -38,7 +38,7 @@ function byggVerktoy(kall: ToolKall[]) {
       inputSchema: z.object({ navnEllerSku: z.string() }),
       run: async (input) => {
         kall.push({ navn: "sok_variant", input });
-        return JSON.stringify(await sokVariant(input.navnEllerSku));
+        return JSON.stringify(await sokVariant(bedriftId, input.navnEllerSku));
       },
     }),
     betaZodTool({
@@ -47,7 +47,7 @@ function byggVerktoy(kall: ToolKall[]) {
       inputSchema: z.object({ navn: z.string() }),
       run: async (input) => {
         kall.push({ navn: "sok_lokasjon", input });
-        return JSON.stringify(await sokLokasjon(input.navn));
+        return JSON.stringify(await sokLokasjon(bedriftId, input.navn));
       },
     }),
     betaZodTool({
@@ -65,6 +65,7 @@ function byggVerktoy(kall: ToolKall[]) {
         kall.push({ navn: "rapport_periode", input });
         return JSON.stringify(
           await beregnRapportPeriode({
+            bedriftId,
             variantId: input.variantId,
             lokasjonId: input.lokasjonId,
             kontekstId: input.kontekstId,
@@ -88,6 +89,7 @@ function byggVerktoy(kall: ToolKall[]) {
         kall.push({ navn: "rapport_kontekst", input });
         return JSON.stringify(
           await beregnRapportKontekst(input.kontekstId, {
+            bedriftId,
             variantId: input.variantId,
             fra: input.fra ? new Date(input.fra) : undefined,
             til: input.til ? new Date(input.til) : undefined,
@@ -104,7 +106,7 @@ function byggVerktoy(kall: ToolKall[]) {
       }),
       run: async (input) => {
         kall.push({ navn: "beholdning", input });
-        return JSON.stringify(await beregnBeholdning(input));
+        return JSON.stringify(await beregnBeholdning({ ...input, bedriftId }));
       },
     }),
   ];
@@ -115,9 +117,9 @@ export interface NlpRapportSvar {
   verktoyKall: ToolKall[];
 }
 
-export async function besvarSporsmal(sporsmal: string): Promise<NlpRapportSvar> {
+export async function besvarSporsmal(bedriftId: string, sporsmal: string): Promise<NlpRapportSvar> {
   const verktoyKall: ToolKall[] = [];
-  const tools = byggVerktoy(verktoyKall);
+  const tools = byggVerktoy(bedriftId, verktoyKall);
 
   const finalMessage = await client.beta.messages.toolRunner({
     model: "claude-opus-5",

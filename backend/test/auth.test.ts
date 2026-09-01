@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { buildServer } from "../src/server.js";
-import { resetDb, testPrisma } from "./helpers.js";
+import { resetDb, testPrisma, STANDARD_BEDRIFT_ID } from "./helpers.js";
 
 // Egen suite som kjorer MED innloggingskrav pa (i motsetning til de ovrige
 // testene som bygger serveren med krevAuth: false).
@@ -43,7 +43,7 @@ describe("auth", () => {
 
   it("lar en invitert e-post registrere seg, logge inn og na beskyttede endepunkt", async () => {
     await testPrisma.invitertEpost.create({
-      data: { epost: "ansatt@example.com", rolle: "ansatt" },
+      data: { epost: "ansatt@example.com", rolle: "ansatt", bedriftId: STANDARD_BEDRIFT_ID },
     });
 
     const reg = await app.inject({
@@ -87,7 +87,9 @@ describe("auth", () => {
   });
 
   it("krever admin-rolle for tillatslisten", async () => {
-    await testPrisma.invitertEpost.create({ data: { epost: "ansatt2@example.com", rolle: "ansatt" } });
+    await testPrisma.invitertEpost.create({
+      data: { epost: "ansatt2@example.com", rolle: "ansatt", bedriftId: STANDARD_BEDRIFT_ID },
+    });
     const reg = await app.inject({
       method: "POST",
       url: "/api/auth/registrer",

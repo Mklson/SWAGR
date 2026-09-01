@@ -2,8 +2,8 @@ import { buildServer } from "./server.js";
 import { sikreAdmin } from "./auth/index.js";
 import { ensureSystemData } from "./db/systemdata.js";
 
-await sikreAdmin();
 await ensureSystemData();
+await sikreAdmin();
 
 const app = await buildServer();
 const port = Number(process.env.PORT ?? 3000);

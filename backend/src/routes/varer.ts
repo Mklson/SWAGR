@@ -19,14 +19,11 @@ export function varerRoutes(app: FastifyInstance) {
       if (!bodyParsed.success) {
         return reply.status(400).send({ error: bodyParsed.error.flatten() });
       }
-      try {
-        return await prisma.vare.update({
-          where: { id: paramsParsed.data.id },
-          data: bodyParsed.data,
-        });
-      } catch {
-        return reply.status(404).send({ error: "Fant ikke varen" });
-      }
+      const finnes = await prisma.vare.findFirst({
+        where: { id: paramsParsed.data.id, bedriftId: request.bedriftId },
+      });
+      if (!finnes) return reply.status(404).send({ error: "Fant ikke varen" });
+      return prisma.vare.update({ where: { id: paramsParsed.data.id }, data: bodyParsed.data });
     },
   );
 }

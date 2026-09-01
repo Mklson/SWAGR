@@ -26,14 +26,11 @@ export function variantRoutes(app: FastifyInstance) {
       if (!bodyParsed.success) {
         return reply.status(400).send({ error: bodyParsed.error.flatten() });
       }
-      try {
-        return await prisma.variant.update({
-          where: { id: paramsParsed.data.id },
-          data: bodyParsed.data,
-        });
-      } catch {
-        return reply.status(404).send({ error: "Fant ikke varianten" });
-      }
+      const finnes = await prisma.variant.findFirst({
+        where: { id: paramsParsed.data.id, bedriftId: request.bedriftId },
+      });
+      if (!finnes) return reply.status(404).send({ error: "Fant ikke varianten" });
+      return prisma.variant.update({ where: { id: paramsParsed.data.id }, data: bodyParsed.data });
     },
   );
 }

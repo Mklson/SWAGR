@@ -19,7 +19,7 @@ export function fakturaerRoutes(app: FastifyInstance) {
 
       try {
         const { fil, mediaType, lokasjonId } = parsed.data;
-        return await foreslaBevegelser(fil, mediaType, lokasjonId);
+        return await foreslaBevegelser(request.bedriftId, fil, mediaType, lokasjonId);
       } catch (err) {
         request.log.error(err);
         return reply.status(502).send({ error: "Kunne ikke tolke dokumentet" });

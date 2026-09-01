@@ -11,7 +11,7 @@ export function beholdningRoutes(app: FastifyInstance) {
       if (!parsed.success) {
         return reply.status(400).send({ error: parsed.error.flatten() });
       }
-      return beregnBeholdning(parsed.data);
+      return beregnBeholdning({ ...parsed.data, bedriftId: request.bedriftId });
     },
   );
 }

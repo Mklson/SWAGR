@@ -19,7 +19,7 @@ export function variantGjenkjenningRoutes(app: FastifyInstance) {
 
       try {
         const { fil, mediaType } = parsed.data;
-        return await gjenkjennVariant(fil, mediaType);
+        return await gjenkjennVariant(request.bedriftId, fil, mediaType);
       } catch (err) {
         request.log.error(err);
         return reply.status(502).send({ error: "Kunne ikke tolke bildet" });

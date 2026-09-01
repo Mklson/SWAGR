@@ -37,7 +37,7 @@ export function bevegelserRoutes(app: FastifyInstance) {
       select: { verdiOre: true },
     });
     const created = await prisma.bevegelse.create({
-      data: { ...parsed.data, verdiOre: variant?.verdiOre ?? null },
+      data: { ...parsed.data, verdiOre: variant?.verdiOre ?? null, bedriftId: request.bedriftId },
     });
     return reply.status(201).send(created);
   });
@@ -50,6 +50,7 @@ export function bevegelserRoutes(app: FastifyInstance) {
     const { variantId, lokasjonId, kontekstId } = parsed.data;
     return prisma.bevegelse.findMany({
       where: {
+        bedriftId: request.bedriftId,
         ...(variantId ? { variantId } : {}),
         ...(lokasjonId ? { lokasjonId } : {}),
         ...(kontekstId ? { kontekstId } : {}),

@@ -25,7 +25,9 @@ export function reservasjonerRoutes(app: FastifyInstance) {
         });
       }
 
-      const created = await prisma.reservasjon.create({ data: parsed.data });
+      const created = await prisma.reservasjon.create({
+        data: { ...parsed.data, bedriftId: request.bedriftId },
+      });
       return reply.status(201).send(created);
     },
   );
@@ -41,6 +43,7 @@ export function reservasjonerRoutes(app: FastifyInstance) {
       const { variantId, lokasjonId, status } = parsed.data;
       return prisma.reservasjon.findMany({
         where: {
+          bedriftId: request.bedriftId,
           ...(variantId ? { variantId } : {}),
           ...(lokasjonId ? { lokasjonId } : {}),
           ...(status ? { status } : {}),
@@ -58,15 +61,14 @@ export function reservasjonerRoutes(app: FastifyInstance) {
       if (!parsed.success) {
         return reply.status(400).send({ error: parsed.error.flatten() });
       }
-      try {
-        const oppdatert = await prisma.reservasjon.update({
-          where: { id: parsed.data.id },
-          data: { status: "kansellert" },
-        });
-        return oppdatert;
-      } catch {
-        return reply.status(404).send({ error: "Fant ikke reservasjonen" });
-      }
+      const finnes = await prisma.reservasjon.findFirst({
+        where: { id: parsed.data.id, bedriftId: request.bedriftId },
+      });
+      if (!finnes) return reply.status(404).send({ error: "Fant ikke reservasjonen" });
+      return prisma.reservasjon.update({
+        where: { id: parsed.data.id },
+        data: { status: "kansellert" },
+      });
     },
   );
 
@@ -78,15 +80,14 @@ export function reservasjonerRoutes(app: FastifyInstance) {
       if (!parsed.success) {
         return reply.status(400).send({ error: parsed.error.flatten() });
       }
-      try {
-        const oppdatert = await prisma.reservasjon.update({
-          where: { id: parsed.data.id },
-          data: { status: "fullfort" },
-        });
-        return oppdatert;
-      } catch {
-        return reply.status(404).send({ error: "Fant ikke reservasjonen" });
-      }
+      const finnes = await prisma.reservasjon.findFirst({
+        where: { id: parsed.data.id, bedriftId: request.bedriftId },
+      });
+      if (!finnes) return reply.status(404).send({ error: "Fant ikke reservasjonen" });
+      return prisma.reservasjon.update({
+        where: { id: parsed.data.id },
+        data: { status: "fullfort" },
+      });
     },
   );
 }

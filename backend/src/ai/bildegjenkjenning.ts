@@ -60,6 +60,7 @@ export interface VariantGjenkjenningResultat {
 }
 
 export async function gjenkjennVariant(
+  bedriftId: string,
   fil: string,
   mediaType: BildeMediaType,
 ): Promise<VariantGjenkjenningResultat> {
@@ -67,7 +68,7 @@ export async function gjenkjennVariant(
 
   const treff = new Map<string, Awaited<ReturnType<typeof sokVariant>>[number]>();
   for (const sok of [beskrevet.synligSku, beskrevet.varetype].filter((s): s is string => !!s)) {
-    for (const v of await sokVariant(sok)) {
+    for (const v of await sokVariant(bedriftId, sok)) {
       treff.set(v.id, v);
     }
   }

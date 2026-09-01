@@ -1,11 +1,13 @@
 import { API_BASE_URL } from "./config";
-import { hentToken, loggUt } from "./lib/auth";
+import { hentBedriftId, hentToken, loggUt } from "./lib/auth";
 import type {
+  Bedrift,
   BeholdningRad,
   Bevegelse,
   BevegelseType,
   Bruker,
   Formaal,
+  InnloggetBruker,
   Kontekst,
   KontekstType,
   Leverandor,
@@ -37,11 +39,13 @@ async function forespørsel<T>(path: string, init?: RequestInit): Promise<T> {
   // sendes en body (kanseller/fullfor har ingen).
   const harBody = init?.body !== undefined;
   const token = hentToken();
+  const bedriftId = hentBedriftId();
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...init,
     headers: {
       ...(harBody ? { "Content-Type": "application/json" } : {}),
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(bedriftId ? { "x-bedrift-id": bedriftId } : {}),
       ...init?.headers,
     },
   });
@@ -97,7 +101,8 @@ export const lastOppBilde = (base64: string) =>
 
 export interface InnloggingSvar {
   token: string;
-  bruker: Bruker;
+  bruker: InnloggetBruker;
+  bedrifter: Bedrift[];
 }
 
 export const loggInn = (epost: string, passord: string) =>
@@ -112,7 +117,13 @@ export const registrer = (epost: string, passord: string, navn: string) =>
     body: JSON.stringify({ epost, passord, navn }),
   });
 
-export const hentMeg = () => forespørsel<Bruker>("/api/auth/meg");
+export interface MegSvar {
+  bruker: InnloggetBruker;
+  bedrifter: Bedrift[];
+  aktivBedriftId: string;
+}
+
+export const hentMeg = () => forespørsel<MegSvar>("/api/auth/meg");
 
 export const listLeverandorer = () => list<Leverandor>("/api/leverandorer");
 export const opprettLeverandor = (data: { navn: string }) =>

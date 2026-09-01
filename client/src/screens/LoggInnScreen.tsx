@@ -35,7 +35,7 @@ export function LoggInnScreen() {
         modus === "logg-inn"
           ? await loggInn(epost.trim(), passord)
           : await registrer(epost.trim(), passord, navn.trim());
-      settOkt(svar.token, svar.bruker);
+      settOkt(svar.token, svar.bruker, svar.bedrifter);
     } catch (err) {
       setFeil(
         err instanceof ApiFeil

@@ -69,6 +69,18 @@ export interface Bruker {
   epost?: string | null;
 }
 
+export interface Bedrift {
+  id: string;
+  navn: string;
+  rolle: string;
+}
+
+export interface InnloggetBruker {
+  id: string;
+  navn: string;
+  epost: string | null;
+}
+
 export type BevegelseType = "inn" | "ut" | "svinn" | "retur" | "internbruk";
 
 export interface Bevegelse {
