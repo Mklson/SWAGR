@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { taBilde, type KomprimertBilde } from "../lib/bilde";
 import { hentLagretBruker } from "../lib/auth";
 import { BildeVelger } from "../components/BildeVelger";
-import { KATEGORI_ALTERNATIVER } from "../lib/kategorier";
+import { KATEGORI_ALTERNATIVER, KATEGORIER } from "../lib/kategorier";
+import { ALLE_KATEGORIER, MerkeOgKategoriFilter, UTEN_MERKE } from "../components/VareFilter";
 import {
   ApiFeil,
   gjenkjennVariant,
@@ -170,6 +171,7 @@ export function VarerScreen() {
           varer={varer}
           varianter={varianter}
           leverandorer={leverandorer}
+          merker={merker}
           merkeAlternativer={merkeAlternativer}
           onLagret={lastInn}
         />
@@ -593,33 +595,73 @@ function RedigerArtikkelSkjema({
   varer,
   varianter,
   leverandorer,
+  merker,
   merkeAlternativer,
   onLagret,
 }: {
   varer: Vare[];
   varianter: Variant[];
   leverandorer: Leverandor[];
+  merker: Merke[];
   merkeAlternativer: MerkeAlternativ[];
   onLagret: () => Promise<void>;
 }) {
   const [valgtVareId, setValgtVareId] = useState<string | null>(null);
+  const [søk, setSøk] = useState("");
+  const [valgtMerke, setValgtMerke] = useState<string | null>(null);
+  const [valgtKategori, setValgtKategori] = useState<string>(ALLE_KATEGORIER);
+
   const vare = varer.find((v) => v.id === valgtVareId) ?? null;
 
-  const vareAlternativer = useMemo(
-    () => varer.map((v) => ({ verdi: v.id, label: `${v.navn} · ${v.kategori}` })),
-    [varer],
-  );
+  const varianterForVare = useMemo(() => {
+    const kart = new Map<string, Variant[]>();
+    for (const v of varianter) {
+      const liste = kart.get(v.vareId) ?? [];
+      liste.push(v);
+      kart.set(v.vareId, liste);
+    }
+    return kart;
+  }, [varianter]);
 
-  return (
-    <View style={stiler.skjema}>
-      <VelgFelt
-        label="Velg artikkel"
-        valgt={valgtVareId}
-        alternativer={vareAlternativer}
-        onVelg={setValgtVareId}
-        tomtekst={varer.length === 0 ? "Ingen artikler ennå" : "Velg artikkel"}
-      />
-      {vare && (
+  const merkeFilterAlternativer = useMemo(() => {
+    const brukteId = new Set(varianter.map((v) => v.merkeId).filter((id): id is string => !!id));
+    return merker.filter((m) => brukteId.has(m.id)).map((m) => ({ id: m.id, navn: m.navn, logoUrl: m.logoUrl }));
+  }, [varianter, merker]);
+  const harUtenMerke = useMemo(
+    () => varer.some((v) => (varianterForVare.get(v.id) ?? []).some((va) => !va.merkeId)),
+    [varer, varianterForVare],
+  );
+  const kategoriAlternativer = useMemo(() => {
+    const iData = new Set<string>();
+    for (const v of varer) if (v.kategori) iData.add(v.kategori);
+    const ekstra = [...iData].filter((k) => !KATEGORIER.includes(k as never)).sort();
+    return [...KATEGORIER, ...ekstra];
+  }, [varer]);
+
+  const treff = useMemo(() => {
+    const søkLav = søk.trim().toLowerCase();
+    return varer
+      .filter((v) => {
+        const vVarianter = varianterForVare.get(v.id) ?? [];
+        if (valgtKategori !== ALLE_KATEGORIER && v.kategori !== valgtKategori) return false;
+        if (valgtMerke === UTEN_MERKE && !vVarianter.some((va) => !va.merkeId)) return false;
+        if (valgtMerke && valgtMerke !== UTEN_MERKE && !vVarianter.some((va) => va.merkeId === valgtMerke))
+          return false;
+        if (søkLav) {
+          const tekst = `${v.navn} ${vVarianter.map((va) => va.sku).join(" ")}`.toLowerCase();
+          if (!tekst.includes(søkLav)) return false;
+        }
+        return true;
+      })
+      .sort((a, b) => a.navn.localeCompare(b.navn));
+  }, [varer, varianterForVare, søk, valgtMerke, valgtKategori]);
+
+  if (vare) {
+    return (
+      <View style={stiler.skjema}>
+        <Pressable onPress={() => setValgtVareId(null)} hitSlop={8}>
+          <Text style={stiler.lenkeTekst}>‹ Tilbake til søk</Text>
+        </Pressable>
         <ArtikkelRedigering
           key={vare.id}
           vare={vare}
@@ -632,6 +674,60 @@ function RedigerArtikkelSkjema({
             await onLagret();
           }}
         />
+      </View>
+    );
+  }
+
+  return (
+    <View style={stiler.skjema}>
+      <TextInput
+        style={stiler.sokFelt}
+        value={søk}
+        onChangeText={setSøk}
+        placeholder="Søk artikkelnavn eller SKU..."
+        autoCorrect={false}
+      />
+      <MerkeOgKategoriFilter
+        idPrefiks="rediger-artikkel"
+        merkeAlternativer={merkeFilterAlternativer}
+        harUtenMerke={harUtenMerke}
+        valgtMerke={valgtMerke}
+        onValgtMerkeChange={setValgtMerke}
+        kategoriAlternativer={kategoriAlternativer}
+        valgtKategori={valgtKategori}
+        onValgtKategoriChange={setValgtKategori}
+      />
+
+      {varer.length === 0 ? (
+        <Text style={stiler.hjelpetekst}>Ingen artikler ennå.</Text>
+      ) : treff.length === 0 ? (
+        <Text style={stiler.hjelpetekst}>Ingen artikler matcher søk/filter.</Text>
+      ) : (
+        <View style={{ gap: 8 }}>
+          {treff.map((v) => {
+            const vVarianter = varianterForVare.get(v.id) ?? [];
+            const bilde = vVarianter.find((va) => va.bildeurl)?.bildeurl ?? null;
+            const merkeNavn = merker.find((m) => m.id === vVarianter.find((va) => va.merkeId)?.merkeId)?.navn;
+            return (
+              <Pressable key={v.id} onPress={() => setValgtVareId(v.id)}>
+                <Kort>
+                  <View style={stiler.trefRad}>
+                    <Miniatyr url={bilde} bokstav={v.navn} storrelse={40} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={stiler.radTittel}>{v.navn}</Text>
+                      <Text style={stiler.radUndertekst}>
+                        {v.kategori}
+                        {merkeNavn ? ` · ${merkeNavn}` : ""} · {vVarianter.length} variant
+                        {vVarianter.length === 1 ? "" : "er"}
+                      </Text>
+                    </View>
+                    <Text style={stiler.lenkeTekst}>Rediger ›</Text>
+                  </View>
+                </Kort>
+              </Pressable>
+            );
+          })}
+        </View>
       )}
     </View>
   );
@@ -1059,6 +1155,20 @@ const stiler = StyleSheet.create({
   },
   skjema: {
     gap: 12,
+  },
+  sokFelt: {
+    borderWidth: 1,
+    borderColor: farger.kant,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 15,
+    color: farger.tekst,
+  },
+  trefRad: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
   },
   liste: {
     gap: 8,
