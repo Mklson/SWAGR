@@ -178,11 +178,22 @@ export const oppdaterLokasjon = (id: string, data: { navn?: string; type?: strin
   patch<Lokasjon>(`/api/lokasjoner/${id}`, data);
 export const slettLokasjon = (id: string) => del(`/api/lokasjoner/${id}`);
 
+export interface KundeKontaktFelter {
+  firma?: string | null;
+  kontaktperson?: string | null;
+  adresse?: string | null;
+  epost?: string | null;
+  telefon?: string | null;
+}
+
 export const listKontekster = () => list<Kontekst>("/api/kontekster");
-export const opprettKontekst = (data: { type: KontekstType; navn: string; referanse?: string }) =>
-  create<Kontekst>("/api/kontekster", data);
-export const oppdaterKontekst = (id: string, data: { navn?: string; referanse?: string | null }) =>
-  patch<Kontekst>(`/api/kontekster/${id}`, data);
+export const opprettKontekst = (
+  data: { type: KontekstType; navn: string; referanse?: string } & KundeKontaktFelter,
+) => create<Kontekst>("/api/kontekster", data);
+export const oppdaterKontekst = (
+  id: string,
+  data: { navn?: string; referanse?: string | null } & KundeKontaktFelter,
+) => patch<Kontekst>(`/api/kontekster/${id}`, data);
 export const slettKontekst = (id: string) => del(`/api/kontekster/${id}`);
 
 export const listFormaal = () => list<Formaal>("/api/formaal");

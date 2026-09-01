@@ -78,15 +78,33 @@ export const kontekstTypeSchema = z.enum([
   "innkjop",
 ]);
 
+const kundeKontaktFelter = {
+  firma: z.string().optional(),
+  kontaktperson: z.string().optional(),
+  adresse: z.string().optional(),
+  epost: z.string().optional(),
+  telefon: z.string().optional(),
+};
+
 export const kontekstCreateSchema = z.object({
   type: kontekstTypeSchema,
   navn: z.string().min(1),
   referanse: z.string().optional(),
+  ...kundeKontaktFelter,
 });
 
-// Kun navn/referanse kan endres - typen (kunde/prosjekt/system) er strukturell.
+// Typen (kunde/prosjekt/system) er strukturell og kan ikke endres; navn +
+// kundeopplysninger kan.
 export const kontekstUpdateSchema = z
-  .object({ navn: z.string().min(1), referanse: z.string().nullable() })
+  .object({
+    navn: z.string().min(1),
+    referanse: z.string().nullable(),
+    firma: z.string().nullable(),
+    kontaktperson: z.string().nullable(),
+    adresse: z.string().nullable(),
+    epost: z.string().nullable(),
+    telefon: z.string().nullable(),
+  })
   .partial();
 
 export const brukerCreateSchema = z.object({

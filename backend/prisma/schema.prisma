@@ -156,6 +156,13 @@ model Kontekst {
   type      KontekstType
   navn      String
   referanse String?
+  // Kundeopplysninger brukt bl.a. på plukklister. Alle valgfrie - eldre
+  // kontekster og system-kontekster har dem ikke.
+  firma         String?
+  kontaktperson String?
+  adresse       String?
+  epost         String?
+  telefon       String?
   bedriftId String       @map("bedrift_id")
 
   bedrift       Bedrift       @relation(fields: [bedriftId], references: [id])

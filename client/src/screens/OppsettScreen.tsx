@@ -528,6 +528,21 @@ function MerkeSeksjon({ merker, onLagtTil }: { merker: Merke[]; onLagtTil: () =>
 
 const INGEN_KOLONNE = "__ingen__";
 
+// Valgfrie ekstrakolonner ved kundeimport - navn/kundenr håndteres separat.
+const EKSTRA_KOLONNER = [
+  { nokkel: "firma", label: "Bedrift", gjett: ["firma", "bedrift", "company", "selskap", "foretak"] },
+  {
+    nokkel: "kontaktperson",
+    label: "Kontaktperson",
+    gjett: ["kontakt", "kontaktperson", "contact", "attn", "att"],
+  },
+  { nokkel: "adresse", label: "Adresse", gjett: ["adresse", "address", "gate", "gateadresse", "postadresse"] },
+  { nokkel: "postnr", label: "Postnr", gjett: ["postnr", "postnummer", "zip", "postcode", "poststed nr"] },
+  { nokkel: "poststed", label: "Poststed", gjett: ["poststed", "sted", "by", "city", "place"] },
+  { nokkel: "epost", label: "E-post", gjett: ["epost", "e-post", "email", "mail", "e-mail"] },
+  { nokkel: "telefon", label: "Telefon", gjett: ["telefon", "tlf", "phone", "mobil", "mobile", "tel"] },
+] as const;
+
 /** Importerer eksisterende kunder fra en CSV-eksport fra et annet system,
  * som Kontekst(type=kunde) - vi bygger ikke en egen kundetabell, kundene
  * dere allerede har er kilden til sannhet, dette er bare en engangs-/
@@ -544,6 +559,7 @@ function KundeImportSeksjon({
   const [rader, setRader] = useState<string[][]>([]);
   const [navnKolonne, setNavnKolonne] = useState<string | null>(null);
   const [referanseKolonne, setReferanseKolonne] = useState<string | null>(INGEN_KOLONNE);
+  const [ekstraKolonner, setEkstraKolonner] = useState<Record<string, string>>({});
   const [feil, setFeil] = useState<string | null>(null);
   const [importerer, setImporterer] = useState(false);
   const [fremdrift, setFremdrift] = useState<{ ferdig: number; totalt: number } | null>(null);
@@ -555,10 +571,14 @@ function KundeImportSeksjon({
   );
 
   const kolonneAlternativer = useMemo(() => headers.map((h, i) => ({ verdi: String(i), label: h })), [headers]);
-  const referanseAlternativer = useMemo(
+  const valgfriAlternativer = useMemo(
     () => [{ verdi: INGEN_KOLONNE, label: "Ingen" }, ...kolonneAlternativer],
     [kolonneAlternativer],
   );
+
+  function idx(verdi: string | null | undefined): number | null {
+    return verdi && verdi !== INGEN_KOLONNE ? Number(verdi) : null;
+  }
 
   async function velgFil() {
     setFeil(null);
@@ -576,10 +596,16 @@ function KundeImportSeksjon({
     setFilnavn(valgt.filnavn);
     setHeaders(h);
     setRader(r);
-    const gjettetNavn = gjettKolonne(h, ["navn", "firma", "kunde", "name", "company"]);
+    const gjettetNavn = gjettKolonne(h, ["navn", "kunde", "name", "kundenavn"]);
     setNavnKolonne(gjettetNavn !== null ? String(gjettetNavn) : String(0));
     const gjettetReferanse = gjettKolonne(h, ["referanse", "kundenr", "nummer", "org", "id"]);
     setReferanseKolonne(gjettetReferanse !== null ? String(gjettetReferanse) : INGEN_KOLONNE);
+    const ekstra: Record<string, string> = {};
+    for (const felt of EKSTRA_KOLONNER) {
+      const g = gjettKolonne(h, [...felt.gjett]);
+      ekstra[felt.nokkel] = g !== null ? String(g) : INGEN_KOLONNE;
+    }
+    setEkstraKolonner(ekstra);
   }
 
   async function importer() {
@@ -590,23 +616,39 @@ function KundeImportSeksjon({
     setFeil(null);
     setImporterer(true);
     const navnIdx = Number(navnKolonne);
-    const referanseIdx = referanseKolonne !== null && referanseKolonne !== INGEN_KOLONNE ? Number(referanseKolonne) : null;
+    const referanseIdx = idx(referanseKolonne);
+    const eIdx = Object.fromEntries(EKSTRA_KOLONNER.map((f) => [f.nokkel, idx(ekstraKolonner[f.nokkel])]));
 
     let importert = 0;
     let hoppetOver = 0;
     let feilet = 0;
     setFremdrift({ ferdig: 0, totalt: rader.length });
 
+    const felt = (rad: string[], i: number | null) => (i !== null ? rad[i]?.trim() || undefined : undefined);
+
     for (let i = 0; i < rader.length; i++) {
-      const navn = rader[i][navnIdx]?.trim();
-      const referanse = referanseIdx !== null ? rader[i][referanseIdx]?.trim() || undefined : undefined;
+      const rad = rader[i];
+      const navn = rad[navnIdx]?.trim();
       if (!navn) {
         feilet++;
       } else if (eksisterendeNavn.has(navn.toLowerCase())) {
         hoppetOver++;
       } else {
+        const adresseDeler = [
+          felt(rad, eIdx.adresse),
+          [felt(rad, eIdx.postnr), felt(rad, eIdx.poststed)].filter(Boolean).join(" ").trim() || undefined,
+        ].filter(Boolean);
         try {
-          await opprettKontekst({ type: "kunde", navn, referanse });
+          await opprettKontekst({
+            type: "kunde",
+            navn,
+            referanse: felt(rad, referanseIdx),
+            firma: felt(rad, eIdx.firma),
+            kontaktperson: felt(rad, eIdx.kontaktperson),
+            adresse: adresseDeler.length ? adresseDeler.join(", ") : undefined,
+            epost: felt(rad, eIdx.epost),
+            telefon: felt(rad, eIdx.telefon),
+          });
           eksisterendeNavn.add(navn.toLowerCase());
           importert++;
         } catch {
@@ -627,7 +669,8 @@ function KundeImportSeksjon({
       <Text style={stiler.hjelpetekst}>
         Har dere allerede en kundeliste i et annet system (regnskap, CRM)? Eksporter den som CSV
         (i Excel: Fil → Lagre som → CSV) og last den opp her i stedet for å opprette kundene på
-        nytt. Kan kjøres flere ganger — kunder som allerede finnes (samme navn) hoppes over.
+        nytt. Bedrift/adresse/kontakt tas med hvis kolonnene finnes — de vises på plukklista. Kan
+        kjøres flere ganger — kunder som allerede finnes (samme navn) hoppes over.
       </Text>
 
       <Knapp tittel={filnavn ? `Valgt: ${filnavn}` : "Velg CSV-fil"} onPress={velgFil} variant="sekundaer" />
@@ -636,18 +679,27 @@ function KundeImportSeksjon({
         <>
           <VelgFelt label="Navn-kolonne" valgt={navnKolonne} alternativer={kolonneAlternativer} onVelg={setNavnKolonne} />
           <VelgFelt
-            label="Referanse-kolonne (valgfritt, f.eks. kundenr.)"
+            label="Kundenr-kolonne (valgfritt)"
             valgt={referanseKolonne}
-            alternativer={referanseAlternativer}
+            alternativer={valgfriAlternativer}
             onVelg={setReferanseKolonne}
           />
+          {EKSTRA_KOLONNER.map((f) => (
+            <VelgFelt
+              key={f.nokkel}
+              label={`${f.label}-kolonne (valgfritt)`}
+              valgt={ekstraKolonner[f.nokkel] ?? INGEN_KOLONNE}
+              alternativer={valgfriAlternativer}
+              onVelg={(v) => setEkstraKolonner((forrige) => ({ ...forrige, [f.nokkel]: v }))}
+            />
+          ))}
 
           <Text style={stiler.forhandsvisningTittel}>
             {rader.length} rader funnet — forhåndsvisning av de 3 første:
           </Text>
           {rader.slice(0, 3).map((rad, i) => {
             const navnIdx = navnKolonne !== null ? Number(navnKolonne) : 0;
-            const referanseIdx = referanseKolonne !== null && referanseKolonne !== INGEN_KOLONNE ? Number(referanseKolonne) : null;
+            const referanseIdx = idx(referanseKolonne);
             return (
               <Kort key={i}>
                 <Text style={stiler.radTittel}>{rad[navnIdx] || "(tomt navn)"}</Text>
@@ -811,6 +863,11 @@ function KunderSeksjon({
 }) {
   const [navn, setNavn] = useState("");
   const [kundenr, setKundenr] = useState("");
+  const [firma, setFirma] = useState("");
+  const [kontaktperson, setKontaktperson] = useState("");
+  const [adresse, setAdresse] = useState("");
+  const [epost, setEpost] = useState("");
+  const [telefon, setTelefon] = useState("");
   const [feil, setFeil] = useState<string | null>(null);
   const [laster, setLaster] = useState(false);
 
@@ -828,9 +885,19 @@ function KunderSeksjon({
         navn: navn.trim(),
         type: "kunde",
         referanse: kundenr.trim() || undefined,
+        firma: firma.trim() || undefined,
+        kontaktperson: kontaktperson.trim() || undefined,
+        adresse: adresse.trim() || undefined,
+        epost: epost.trim() || undefined,
+        telefon: telefon.trim() || undefined,
       });
       setNavn("");
       setKundenr("");
+      setFirma("");
+      setKontaktperson("");
+      setAdresse("");
+      setEpost("");
+      setTelefon("");
       await onLagtTil();
     } catch (err) {
       setFeil(err instanceof ApiFeil ? err.message : "Kunne ikke opprette kunden.");
@@ -842,9 +909,25 @@ function KunderSeksjon({
   return (
     <View style={stiler.seksjonInnhold}>
       <Text style={stiler.hjelpetekst}>
-        Kundene et uttak kan registreres på. Kan også lastes inn i bulk fra CSV nedenfor.
+        Kundene et uttak kan registreres på. Navn, bedrift og adresse vises på plukklista.
+        Kan også lastes inn i bulk fra CSV nedenfor.
       </Text>
       <TekstFelt label="Navn" value={navn} onChangeText={setNavn} placeholder="F.eks. Solstrand Hotell" />
+      <TekstFelt label="Bedrift (valgfritt)" value={firma} onChangeText={setFirma} placeholder="Juridisk/fakturanavn" />
+      <TekstFelt
+        label="Kontaktperson (valgfritt)"
+        value={kontaktperson}
+        onChangeText={setKontaktperson}
+        placeholder="F.eks. Kari Nordmann"
+      />
+      <TekstFelt
+        label="Adresse (valgfritt)"
+        value={adresse}
+        onChangeText={setAdresse}
+        placeholder="Gate, postnr, sted"
+      />
+      <TekstFelt label="E-post (valgfritt)" value={epost} onChangeText={setEpost} placeholder="post@kunde.no" />
+      <TekstFelt label="Telefon (valgfritt)" value={telefon} onChangeText={setTelefon} placeholder="+47 ..." />
       <TekstFelt
         label="Kundenr (valgfritt)"
         value={kundenr}
@@ -861,13 +944,33 @@ function KunderSeksjon({
             <RedigerRad
               key={k.id}
               tittel={k.navn}
-              undertekst={k.referanse ? `Kundenr: ${k.referanse}` : undefined}
+              undertekst={[k.firma, k.adresse, k.referanse ? `Kundenr: ${k.referanse}` : null]
+                .filter(Boolean)
+                .join(" · ") || undefined}
               felter={[
                 { nokkel: "navn", label: "Navn", start: k.navn },
+                { nokkel: "firma", label: "Bedrift (valgfritt)", start: k.firma ?? "", valgfri: true },
+                {
+                  nokkel: "kontaktperson",
+                  label: "Kontaktperson (valgfritt)",
+                  start: k.kontaktperson ?? "",
+                  valgfri: true,
+                },
+                { nokkel: "adresse", label: "Adresse (valgfritt)", start: k.adresse ?? "", valgfri: true },
+                { nokkel: "epost", label: "E-post (valgfritt)", start: k.epost ?? "", valgfri: true },
+                { nokkel: "telefon", label: "Telefon (valgfritt)", start: k.telefon ?? "", valgfri: true },
                 { nokkel: "kundenr", label: "Kundenr (valgfritt)", start: k.referanse ?? "", valgfri: true },
               ]}
               onLagre={async (v) => {
-                await oppdaterKontekst(k.id, { navn: v.navn, referanse: v.kundenr || null });
+                await oppdaterKontekst(k.id, {
+                  navn: v.navn,
+                  referanse: v.kundenr || null,
+                  firma: v.firma || null,
+                  kontaktperson: v.kontaktperson || null,
+                  adresse: v.adresse || null,
+                  epost: v.epost || null,
+                  telefon: v.telefon || null,
+                });
                 await onLagtTil();
               }}
               onSlett={async () => {

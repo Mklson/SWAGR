@@ -55,6 +55,11 @@ export interface Kontekst {
   type: KontekstType;
   navn: string;
   referanse: string | null;
+  firma: string | null;
+  kontaktperson: string | null;
+  adresse: string | null;
+  epost: string | null;
+  telefon: string | null;
 }
 
 export interface Formaal {

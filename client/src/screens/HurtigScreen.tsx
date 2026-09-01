@@ -31,6 +31,7 @@ import {
 } from "../api";
 import { hentLagretVerdi, lagreVerdi } from "../lib/lagring";
 import { hentLagretBruker } from "../lib/auth";
+import { åpnePlukkliste } from "../lib/plukkliste";
 import { formatterKroner } from "../lib/valuta";
 import { KATEGORIER } from "../lib/kategorier";
 import { ALLE_KATEGORIER, MerkeOgKategoriFilter, UTEN_MERKE } from "../components/VareFilter";
@@ -139,6 +140,16 @@ export function HurtigScreen() {
   const [kameraÅpen, setKameraÅpen] = useState(false);
 
   const [kurv, setKurv] = useState<KurvLinje[]>([]);
+  // Den sist fullførte ordren - brukt til å tilby en plukkliste-PDF etterpå.
+  const [sisteOrdre, setSisteOrdre] = useState<{
+    linjer: KurvLinje[];
+    type: HurtigType;
+    kundeId: string | null;
+    formaalId: string | null;
+    lokasjonId: string;
+    brukerId: string;
+    tidspunkt: string;
+  } | null>(null);
 
   const lastData = useCallback(async () => {
     setLasterData(true);
@@ -232,6 +243,7 @@ export function HurtigScreen() {
     lagreVerdi(SISTE_BRUKER_NOKKEL, brukerId);
     setTellerIØkt(0);
     setSisteMelding(null);
+    setSisteOrdre(null);
     setKurv([]);
     setFase("skanning");
   }
@@ -257,6 +269,7 @@ export function HurtigScreen() {
     setValgtMerke(null);
     setValgtKategori(ALLE_KATEGORIER);
     setKurv([]);
+    setSisteOrdre(null);
   }
 
   const kundeNavn = kontekster.find((k) => k.id === kundeId)?.navn;
@@ -268,6 +281,7 @@ export function HurtigScreen() {
   const brukerNavn = brukere.find((b) => b.id === brukerId)?.navn ?? "?";
 
   function leggIKurv(variantId: string, antall: number) {
+    setSisteOrdre(null);
     setKurv((forrige) => {
       const eksisterende = forrige.find((l) => l.variantId === variantId);
       if (eksisterende) {
@@ -279,6 +293,45 @@ export function HurtigScreen() {
     const navn = variant ? `${vareMap.get(variant.vareId)?.navn ?? "Ukjent vare"} — ${variant.sku}` : "";
     setSisteMelding(`🛒 Lagt i kurv: ${navn} — ${antall} stk`);
     setValgtVariantId(null);
+  }
+
+  function lagPlukkliste() {
+    if (!sisteOrdre) return;
+    const kunde = sisteOrdre.kundeId
+      ? kontekster.find((k) => k.id === sisteOrdre.kundeId) ?? null
+      : null;
+    const linjer = sisteOrdre.linjer.map((l) => {
+      const variant = variantMap.get(l.variantId);
+      const vare = variant ? vareMap.get(variant.vareId) : undefined;
+      return {
+        navn: vare?.navn ?? "Ukjent artikkel",
+        sku: variant?.sku ?? "?",
+        merke: variant?.merkeId ? merkeMap.get(variant.merkeId)?.navn ?? null : null,
+        antall: l.antall,
+      };
+    });
+    const ok = åpnePlukkliste({
+      tittel: sisteOrdre.type === "reserver" ? "Plukkliste (reservasjon)" : "Plukkliste",
+      ordreDato: sisteOrdre.tidspunkt,
+      kunde: kunde
+        ? {
+            navn: kunde.navn,
+            firma: kunde.firma,
+            kontaktperson: kunde.kontaktperson,
+            adresse: kunde.adresse,
+            kundenr: kunde.referanse,
+            epost: kunde.epost,
+            telefon: kunde.telefon,
+          }
+        : null,
+      formaal: formaal.find((f) => f.id === sisteOrdre.formaalId)?.navn ?? null,
+      lokasjon: lokasjoner.find((l) => l.id === sisteOrdre.lokasjonId)?.navn ?? "?",
+      registrertAv: brukere.find((b) => b.id === sisteOrdre.brukerId)?.navn ?? "?",
+      linjer,
+    });
+    if (!ok) {
+      setSisteMelding("Kunne ikke åpne plukklista — tillat sprettoppvinduer for siden og prøv igjen.");
+    }
   }
 
   function endreAntallIKurv(variantId: string, nyttAntall: number) {
@@ -373,6 +426,15 @@ export function HurtigScreen() {
           ? `✓ Reservert: ${kurv.length} varelinjer, ${antallFullført} stk`
           : `✓ Ordre fullført: ${kurv.length} varelinjer, ${antallFullført} stk`,
       );
+      setSisteOrdre({
+        linjer: kurv,
+        type,
+        kundeId,
+        formaalId,
+        lokasjonId: lokasjonId!,
+        brukerId: brukerId!,
+        tidspunkt: new Date().toISOString(),
+      });
       setFase("skanning");
       return null;
     }
@@ -518,6 +580,16 @@ export function HurtigScreen() {
       {sisteMelding && (
         <View style={stiler.toast}>
           <Text style={stiler.toastTekst}>{sisteMelding}</Text>
+        </View>
+      )}
+
+      {sisteOrdre && (
+        <View style={stiler.plukkRad}>
+          <Knapp tittel="📄 Lag plukkliste (PDF)" onPress={lagPlukkliste} variant="sekundaer" />
+          <Text style={stiler.plukkHjelp}>
+            Åpnes som utskrift — velg «Lagre som PDF». Filen kan legges ved i Outlook eller sendes
+            som melding, fra både PC og mobil.
+          </Text>
         </View>
       )}
 
@@ -1138,6 +1210,15 @@ const stiler = StyleSheet.create({
     color: farger.primaer,
     fontWeight: "600",
     fontSize: 13,
+  },
+  plukkRad: {
+    marginHorizontal: 16,
+    marginBottom: 8,
+    gap: 6,
+  },
+  plukkHjelp: {
+    fontSize: 11,
+    color: "#888",
   },
   grid: {
     flex: 1,

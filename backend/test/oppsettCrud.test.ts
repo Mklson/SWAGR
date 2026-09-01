@@ -130,6 +130,34 @@ describe("oppsett CRUD (rediger/slett)", () => {
     expect(del.statusCode).toBe(409);
   });
 
+  it("lagrer og oppdaterer kundeopplysninger på en kontekst", async () => {
+    const kunde = (
+      await app.inject({
+        method: "POST",
+        url: "/api/kontekster",
+        payload: {
+          type: "kunde",
+          navn: "Solstrand Hotell",
+          firma: "Solstrand Fjordhotell AS",
+          adresse: "Solstrandvegen 200, 5200 Os",
+          epost: "post@solstrand.no",
+          telefon: "56 57 11 00",
+        },
+      })
+    ).json();
+    expect(kunde.firma).toBe("Solstrand Fjordhotell AS");
+    expect(kunde.adresse).toBe("Solstrandvegen 200, 5200 Os");
+
+    const patch = await app.inject({
+      method: "PATCH",
+      url: `/api/kontekster/${kunde.id}`,
+      payload: { kontaktperson: "Kari Nordmann", telefon: null },
+    });
+    expect(patch.statusCode).toBe(200);
+    expect(patch.json().kontaktperson).toBe("Kari Nordmann");
+    expect(patch.json().telefon).toBeNull();
+  });
+
   it("inngående-rapport summerer varemottak per variant", async () => {
     const lev = (
       await app.inject({ method: "POST", url: "/api/leverandorer", payload: { navn: "L" } })
