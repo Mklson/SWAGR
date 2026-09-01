@@ -171,6 +171,8 @@ export function RapporterScreen() {
 interface Gruppe {
   key: string;
   navn: string;
+  kundeNavn: string;
+  merkeNavn: string;
   antall: number;
   verdiOre: number;
   antallMedVerdi: number;
@@ -224,12 +226,14 @@ function FleksibelRapport({
       if (kontekstId && !merkeId) return r.merkeId ?? "uten-merke";
       return `${r.kontekstId}:${r.merkeId ?? "uten-merke"}`;
     };
+    const kundeNavnFor = (r: RapportFleksibelRad) =>
+      kontekstMap.get(r.kontekstId)?.navn ?? "Ukjent kunde";
+    const merkeNavnFor = (r: RapportFleksibelRad) =>
+      r.merkeId ? merkeMap.get(r.merkeId)?.navn ?? "Ukjent merke" : "Uten merke";
     const navn = (r: RapportFleksibelRad) => {
-      const kundeNavn = kontekstMap.get(r.kontekstId)?.navn ?? "Ukjent kunde";
-      const merkeNavn = r.merkeId ? merkeMap.get(r.merkeId)?.navn ?? "Ukjent merke" : "Uten merke";
-      if (merkeId && !kontekstId) return kundeNavn;
-      if (kontekstId && !merkeId) return merkeNavn;
-      return `${kundeNavn} — ${merkeNavn}`;
+      if (merkeId && !kontekstId) return kundeNavnFor(r);
+      if (kontekstId && !merkeId) return merkeNavnFor(r);
+      return `${kundeNavnFor(r)} — ${merkeNavnFor(r)}`;
     };
 
     const kart = new Map<string, Gruppe>();
@@ -238,6 +242,8 @@ function FleksibelRapport({
       const eksisterende = kart.get(key) ?? {
         key,
         navn: navn(r),
+        kundeNavn: kundeNavnFor(r),
+        merkeNavn: merkeNavnFor(r),
         antall: 0,
         verdiOre: 0,
         antallMedVerdi: 0,
@@ -259,9 +265,10 @@ function FleksibelRapport({
   function eksporter() {
     eksporterCsv(
       `rapport-fleksibel-${dagensDato()}`,
-      ["Navn", "Inn", "Ut", "Retur", "Svinn", "Internbruk", "Antall totalt", "Verdi (kr)"],
+      ["Kunde", "Merke", "Inn", "Ut", "Retur", "Svinn", "Internbruk", "Antall totalt", "Verdi (kr)"],
       grupper.map((g) => [
-        g.navn,
+        g.kundeNavn,
+        g.merkeNavn,
         g.typer.get("inn") ?? 0,
         g.typer.get("ut") ?? 0,
         g.typer.get("retur") ?? 0,
