@@ -14,6 +14,7 @@ import type {
   Lokasjon,
   Merke,
   RapportFleksibelRad,
+  RapportInngaendeRad,
   RapportKontekstRad,
   RapportPeriodeRad,
   Reservasjon,
@@ -71,6 +72,10 @@ function create<T>(path: string, data: unknown): Promise<T> {
 
 function patch<T>(path: string, data: unknown): Promise<T> {
   return forespørsel<T>(path, { method: "PATCH", body: JSON.stringify(data) });
+}
+
+function del(path: string): Promise<unknown> {
+  return forespørsel<unknown>(path, { method: "DELETE" });
 }
 
 function byggSpørrestreng(query: Record<string, string | undefined>): string {
@@ -131,6 +136,9 @@ export const oppdaterBedrift = (data: { navn?: string; logoUrl?: string | null }
 export const listLeverandorer = () => list<Leverandor>("/api/leverandorer");
 export const opprettLeverandor = (data: { navn: string }) =>
   create<Leverandor>("/api/leverandorer", data);
+export const oppdaterLeverandor = (id: string, data: { navn?: string }) =>
+  patch<Leverandor>(`/api/leverandorer/${id}`, data);
+export const slettLeverandor = (id: string) => del(`/api/leverandorer/${id}`);
 
 export const listVarer = () => list<Vare>("/api/varer");
 export const opprettVare = (data: { navn: string; kategori: string; leverandorId: string }) =>
@@ -157,21 +165,36 @@ export const oppdaterVariant = (
 export const listMerker = () => list<Merke>("/api/merker");
 export const opprettMerke = (data: { navn: string; logoUrl?: string }) =>
   create<Merke>("/api/merker", data);
+export const oppdaterMerke = (id: string, data: { navn?: string; logoUrl?: string | null }) =>
+  patch<Merke>(`/api/merker/${id}`, data);
+export const slettMerke = (id: string) => del(`/api/merker/${id}`);
 
 export const listLokasjoner = () => list<Lokasjon>("/api/lokasjoner");
 export const opprettLokasjon = (data: { navn: string; type: string }) =>
   create<Lokasjon>("/api/lokasjoner", data);
+export const oppdaterLokasjon = (id: string, data: { navn?: string; type?: string }) =>
+  patch<Lokasjon>(`/api/lokasjoner/${id}`, data);
+export const slettLokasjon = (id: string) => del(`/api/lokasjoner/${id}`);
 
 export const listKontekster = () => list<Kontekst>("/api/kontekster");
 export const opprettKontekst = (data: { type: KontekstType; navn: string; referanse?: string }) =>
   create<Kontekst>("/api/kontekster", data);
+export const oppdaterKontekst = (id: string, data: { navn?: string; referanse?: string | null }) =>
+  patch<Kontekst>(`/api/kontekster/${id}`, data);
+export const slettKontekst = (id: string) => del(`/api/kontekster/${id}`);
 
 export const listFormaal = () => list<Formaal>("/api/formaal");
 export const opprettFormaal = (data: { navn: string }) => create<Formaal>("/api/formaal", data);
+export const oppdaterFormaal = (id: string, data: { navn?: string }) =>
+  patch<Formaal>(`/api/formaal/${id}`, data);
+export const slettFormaal = (id: string) => del(`/api/formaal/${id}`);
 
 export const listBrukere = () => list<Bruker>("/api/brukere");
 export const opprettBruker = (data: { navn: string; rolle: string }) =>
   create<Bruker>("/api/brukere", data);
+export const oppdaterBruker = (id: string, data: { navn?: string; rolle?: string }) =>
+  patch<Bruker>(`/api/brukere/${id}`, data);
+export const slettBruker = (id: string) => del(`/api/brukere/${id}`);
 
 export const listBevegelser = (query?: { variantId?: string; lokasjonId?: string; kontekstId?: string }) =>
   list<Bevegelse>(`/api/bevegelser${byggSpørrestreng(query ?? {})}`);
@@ -222,3 +245,11 @@ export const hentRapportFleksibel = (query: {
   fra?: string;
   til?: string;
 }) => list<RapportFleksibelRad>(`/api/rapporter/fleksibel${byggSpørrestreng(query)}`);
+
+export const hentRapportInngaende = (query: {
+  lokasjonId?: string;
+  merkeId?: string;
+  leverandorId?: string;
+  fra?: string;
+  til?: string;
+}) => list<RapportInngaendeRad>(`/api/rapporter/inngaende${byggSpørrestreng(query)}`);

@@ -4,6 +4,11 @@ export const leverandorCreateSchema = z.object({
   navn: z.string().min(1),
 });
 
+export const leverandorUpdateSchema = z.object({ navn: z.string().min(1) }).partial();
+
+// Generisk :id-parameter (uuid) for oppdater/slett på referansetabeller.
+export const idParamsSchema = z.object({ id: z.string().uuid() });
+
 export const vareCreateSchema = z.object({
   navn: z.string().min(1),
   kategori: z.string().min(1),
@@ -26,6 +31,13 @@ export const merkeCreateSchema = z.object({
   navn: z.string().min(1),
   logoUrl: z.string().url().optional(),
 });
+
+export const merkeUpdateSchema = z
+  .object({
+    navn: z.string().min(1),
+    logoUrl: z.string().url().nullable(),
+  })
+  .partial();
 
 export const variantCreateSchema = z.object({
   vareId: z.string().uuid(),
@@ -53,6 +65,10 @@ export const lokasjonCreateSchema = z.object({
   type: z.string().min(1),
 });
 
+export const lokasjonUpdateSchema = z
+  .object({ navn: z.string().min(1), type: z.string().min(1) })
+  .partial();
+
 export const kontekstTypeSchema = z.enum([
   "kunde",
   "prosjekt",
@@ -68,10 +84,19 @@ export const kontekstCreateSchema = z.object({
   referanse: z.string().optional(),
 });
 
+// Kun navn/referanse kan endres - typen (kunde/prosjekt/system) er strukturell.
+export const kontekstUpdateSchema = z
+  .object({ navn: z.string().min(1), referanse: z.string().nullable() })
+  .partial();
+
 export const brukerCreateSchema = z.object({
   navn: z.string().min(1),
   rolle: z.string().min(1),
 });
+
+export const brukerUpdateSchema = z
+  .object({ navn: z.string().min(1), rolle: z.string().min(1) })
+  .partial();
 
 export const bevegelseTypeSchema = z.enum([
   "inn",
@@ -128,6 +153,14 @@ export const rapportPeriodeQuerySchema = z.object({
   til: z.coerce.date().optional(),
 });
 
+export const rapportInngaendeQuerySchema = z.object({
+  lokasjonId: z.string().uuid().optional(),
+  merkeId: z.string().uuid().optional(),
+  leverandorId: z.string().uuid().optional(),
+  fra: z.coerce.date().optional(),
+  til: z.coerce.date().optional(),
+});
+
 export const reservasjonStatusSchema = z.enum(["aktiv", "kansellert", "fullfort"]);
 
 export const reservasjonCreateSchema = z.object({
@@ -143,6 +176,8 @@ export const reservasjonCreateSchema = z.object({
 export const formaalCreateSchema = z.object({
   navn: z.string().min(1),
 });
+
+export const formaalUpdateSchema = z.object({ navn: z.string().min(1) }).partial();
 
 export const bedriftUpdateSchema = z
   .object({

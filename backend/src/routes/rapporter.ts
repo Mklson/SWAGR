@@ -1,11 +1,17 @@
 import type { FastifyInstance } from "fastify";
 import {
   rapportFleksibelQuerySchema,
+  rapportInngaendeQuerySchema,
   rapportKontekstParamsSchema,
   rapportKontekstQuerySchema,
   rapportPeriodeQuerySchema,
 } from "../schemas/index.js";
-import { beregnRapportFleksibel, beregnRapportKontekst, beregnRapportPeriode } from "../lib/rapportBeregning.js";
+import {
+  beregnRapportFleksibel,
+  beregnRapportInngaende,
+  beregnRapportKontekst,
+  beregnRapportPeriode,
+} from "../lib/rapportBeregning.js";
 
 export function rapporterRoutes(app: FastifyInstance) {
   // Summerer antall per variant+type for én kontekst (f.eks. "hvor mye har vi
@@ -52,6 +58,20 @@ export function rapporterRoutes(app: FastifyInstance) {
         return reply.status(400).send({ error: parsed.error.flatten() });
       }
       return beregnRapportFleksibel({ ...parsed.data, bedriftId: request.bedriftId });
+    },
+  );
+
+  // Inngående varer / varemottak: alt som er tatt inn på lager, summert per
+  // variant, filtrerbart på lokasjon, merke, leverandør og periode.
+  app.get(
+    "/api/rapporter/inngaende",
+    { schema: { tags: ["Rapporter"], summary: "Inngående varer (varemottak) summert per variant" } },
+    async (request, reply) => {
+      const parsed = rapportInngaendeQuerySchema.safeParse(request.query);
+      if (!parsed.success) {
+        return reply.status(400).send({ error: parsed.error.flatten() });
+      }
+      return beregnRapportInngaende({ ...parsed.data, bedriftId: request.bedriftId });
     },
   );
 }

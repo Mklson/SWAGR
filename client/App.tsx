@@ -164,7 +164,10 @@ const stiler = StyleSheet.create({
   rot: {
     flex: 1,
     backgroundColor: "#fff",
-    ...(Platform.OS === "web" ? { maxWidth: 480, marginHorizontal: "auto" as never, width: "100%" } : {}),
+    // Bredere ramme på web slik at appen er brukbar på PC, ikke bare mobil.
+    ...(Platform.OS === "web"
+      ? { maxWidth: 960, marginHorizontal: "auto" as never, width: "100%" }
+      : {}),
   },
   logoBar: {
     alignItems: "center",
@@ -173,8 +176,9 @@ const stiler = StyleSheet.create({
     backgroundColor: "#fff",
   },
   logo: {
-    height: 44,
+    height: 48,
     width: "70%",
+    maxWidth: 320,
   },
   bedriftBar: {
     backgroundColor: farger.primaer,

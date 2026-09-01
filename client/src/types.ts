@@ -143,3 +143,11 @@ export interface RapportFleksibelRad {
   verdiOre: number;
   antallMedVerdi: number;
 }
+
+export interface RapportInngaendeRad {
+  variantId: string;
+  antall: number;
+  verdiOre: number;
+  antallMedVerdi: number;
+  sisteInn: string | null;
+}

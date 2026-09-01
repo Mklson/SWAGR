@@ -86,6 +86,59 @@ describe("auth", () => {
     expect(varer.statusCode).toBe(200);
   });
 
+  it("lar en vanlig ansatt endre bedriften (ikke lenger admin-only)", async () => {
+    await testPrisma.invitertEpost.create({
+      data: { epost: "ansatt3@example.com", rolle: "ansatt", bedriftId: STANDARD_BEDRIFT_ID },
+    });
+    const reg = await app.inject({
+      method: "POST",
+      url: "/api/auth/registrer",
+      payload: { epost: "ansatt3@example.com", passord: "passord123", navn: "Per" },
+    });
+    const token = reg.json().token as string;
+
+    const res = await app.inject({
+      method: "PATCH",
+      url: "/api/bedrift",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { navn: "Nytt Navn AS" },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().navn).toBe("Nytt Navn AS");
+  });
+
+  it("global admin (superadmin) er admin i alle bedrifter", async () => {
+    const annen = await testPrisma.bedrift.create({ data: { navn: "Annen Bedrift AS" } });
+    await testPrisma.invitertEpost.create({
+      data: { epost: "sjef@example.com", rolle: "ansatt", bedriftId: STANDARD_BEDRIFT_ID },
+    });
+    const reg = await app.inject({
+      method: "POST",
+      url: "/api/auth/registrer",
+      payload: { epost: "sjef@example.com", passord: "passord123", navn: "Sjef" },
+    });
+    const brukerId = reg.json().bruker.id as string;
+    await testPrisma.bruker.update({ where: { id: brukerId }, data: { superadmin: true } });
+
+    const inn = await app.inject({
+      method: "POST",
+      url: "/api/auth/logg-inn",
+      payload: { epost: "sjef@example.com", passord: "passord123" },
+    });
+    const token = inn.json().token as string;
+    // Ser alle bedrifter, alltid som admin.
+    expect(inn.json().bedrifter).toHaveLength(2);
+    expect(inn.json().bedrifter.every((b: { rolle: string }) => b.rolle === "admin")).toBe(true);
+
+    // Kan operere i en bedrift den ikke er medlem av, som admin.
+    const adminEndepunkt = await app.inject({
+      method: "GET",
+      url: "/api/inviterte",
+      headers: { authorization: `Bearer ${token}`, "x-bedrift-id": annen.id },
+    });
+    expect(adminEndepunkt.statusCode).toBe(200);
+  });
+
   it("krever admin-rolle for tillatslisten", async () => {
     await testPrisma.invitertEpost.create({
       data: { epost: "ansatt2@example.com", rolle: "ansatt", bedriftId: STANDARD_BEDRIFT_ID },

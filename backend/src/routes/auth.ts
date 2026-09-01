@@ -7,19 +7,32 @@ interface BrukerMedBedrifter {
   id: string;
   navn: string;
   epost: string | null;
+  superadmin: boolean;
   bedrifter: { bedriftId: string; rolle: string; bedrift: { navn: string; logoUrl: string | null } }[];
 }
 
-function svarForBruker(app: FastifyInstance, b: BrukerMedBedrifter) {
+/**
+ * Bedriftslista brukeren skal se: egne medlemskap, men for en global admin
+ * (superadmin) alle bedrifter - alltid med rollen "admin".
+ */
+async function bedrifterForBruker(b: BrukerMedBedrifter) {
+  if (b.superadmin) {
+    const alle = await prisma.bedrift.findMany({ orderBy: { opprettet: "asc" } });
+    return alle.map((bed) => ({ id: bed.id, navn: bed.navn, logoUrl: bed.logoUrl, rolle: "admin" }));
+  }
+  return b.bedrifter.map((m) => ({
+    id: m.bedriftId,
+    navn: m.bedrift.navn,
+    logoUrl: m.bedrift.logoUrl,
+    rolle: m.rolle,
+  }));
+}
+
+async function svarForBruker(app: FastifyInstance, b: BrukerMedBedrifter) {
   return {
     token: app.jwt.sign({ sub: b.id }, { expiresIn: "30d" }),
     bruker: { id: b.id, navn: b.navn, epost: b.epost },
-    bedrifter: b.bedrifter.map((m) => ({
-      id: m.bedriftId,
-      navn: m.bedrift.navn,
-      logoUrl: m.bedrift.logoUrl,
-      rolle: m.rolle,
-    })),
+    bedrifter: await bedrifterForBruker(b),
   };
 }
 
@@ -68,7 +81,7 @@ export function authRoutes(app: FastifyInstance) {
         where: { id: bruker.id },
         include: medBedrifter,
       });
-      return reply.code(201).send(svarForBruker(app, full));
+      return reply.code(201).send(await svarForBruker(app, full));
     },
   );
 
@@ -90,7 +103,7 @@ export function authRoutes(app: FastifyInstance) {
       if (!bruker || !gyldig) {
         return reply.code(401).send({ error: "Feil e-post eller passord." });
       }
-      return reply.send(svarForBruker(app, bruker));
+      return reply.send(await svarForBruker(app, bruker));
     },
   );
 
@@ -106,12 +119,7 @@ export function authRoutes(app: FastifyInstance) {
       if (!bruker) return reply.code(401).send({ error: "Ikke innlogget." });
       return {
         bruker: { id: bruker.id, navn: bruker.navn, epost: bruker.epost },
-        bedrifter: bruker.bedrifter.map((m) => ({
-          id: m.bedriftId,
-          navn: m.bedrift.navn,
-          logoUrl: m.bedrift.logoUrl,
-          rolle: m.rolle,
-        })),
+        bedrifter: await bedrifterForBruker(bruker),
         aktivBedriftId: request.bedriftId,
       };
     },

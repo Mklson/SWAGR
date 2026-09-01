@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Image, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import {
   ApiFeil,
   hentMeg,
@@ -11,16 +11,28 @@ import {
   listLokasjoner,
   listMerker,
   oppdaterBedrift,
+  oppdaterBruker,
+  oppdaterFormaal,
+  oppdaterKontekst,
+  oppdaterLeverandor,
+  oppdaterLokasjon,
+  oppdaterMerke,
   opprettBruker,
   opprettFormaal,
   opprettKontekst,
   opprettLeverandor,
   opprettLokasjon,
   opprettMerke,
+  slettBruker,
+  slettFormaal,
+  slettKontekst,
+  slettLeverandor,
+  slettLokasjon,
+  slettMerke,
 } from "../api";
 import { gjettKolonne, parseCsv } from "../lib/csv";
 import { velgTekstfil } from "../lib/nettleserFil";
-import { hentAktivBedrift, hentAktivRolle, settBedrifter } from "../lib/auth";
+import { hentAktivBedrift, settBedrifter } from "../lib/auth";
 import { BildeVelger } from "../components/BildeVelger";
 import type { Bruker, Formaal, Kontekst, Leverandor, Lokasjon, Merke } from "../types";
 import {
@@ -73,13 +85,13 @@ export function OppsettScreen() {
       keyboardShouldPersistTaps="handled"
     >
       <Text style={stiler.tittel}>Oppsett</Text>
-      <Text style={stiler.undertekst}>Referansedata brukt ved registrering av bevegelser</Text>
+      <Text style={stiler.undertekst}>
+        Referansedata brukt ved registrering av bevegelser. Alle i bedriften kan redigere.
+      </Text>
 
-      {hentAktivRolle() === "admin" && (
-        <Sammenleggbar tittel="Bedrift" apen={apen === "bedrift"} onToggle={() => toggle("bedrift")}>
-          <BedriftSeksjon />
-        </Sammenleggbar>
-      )}
+      <Sammenleggbar tittel="Bedrift" apen={apen === "bedrift"} onToggle={() => toggle("bedrift")}>
+        <BedriftSeksjon />
+      </Sammenleggbar>
 
       <Sammenleggbar tittel="Leverandører" apen={apen === "leverandor"} onToggle={() => toggle("leverandor")}>
         <LeverandorSeksjon leverandorer={leverandorer} onLagtTil={lastInn} />
@@ -107,6 +119,261 @@ export function OppsettScreen() {
         <BrukerSeksjon brukere={brukere} onLagtTil={lastInn} />
       </Sammenleggbar>
     </ScrollView>
+  );
+}
+
+interface RedigerFelt {
+  nokkel: string;
+  label: string;
+  start: string;
+  placeholder?: string;
+  valgfri?: boolean;
+}
+
+/** Én rad i en oppsett-liste: viser verdien, "Rediger" folder ut felt for
+ * endring + sletting. Brukes for alle rene tekst-referansetabeller. */
+function RedigerRad({
+  tittel,
+  undertekst,
+  felter,
+  onLagre,
+  onSlett,
+}: {
+  tittel: string;
+  undertekst?: string;
+  felter: RedigerFelt[];
+  onLagre: (verdier: Record<string, string>) => Promise<void>;
+  onSlett: () => Promise<void>;
+}) {
+  const [rediger, setRediger] = useState(false);
+  const [verdier, setVerdier] = useState<Record<string, string>>({});
+  const [feil, setFeil] = useState<string | null>(null);
+  const [laster, setLaster] = useState(false);
+  const [bekreftSlett, setBekreftSlett] = useState(false);
+
+  function apne() {
+    setVerdier(Object.fromEntries(felter.map((f) => [f.nokkel, f.start])));
+    setFeil(null);
+    setBekreftSlett(false);
+    setRediger(true);
+  }
+
+  async function lagre() {
+    setFeil(null);
+    if (felter.some((f) => !f.valgfri && !verdier[f.nokkel]?.trim())) {
+      setFeil("Fyll ut alle påkrevde felter.");
+      return;
+    }
+    setLaster(true);
+    try {
+      await onLagre(Object.fromEntries(felter.map((f) => [f.nokkel, (verdier[f.nokkel] ?? "").trim()])));
+      setRediger(false);
+    } catch (err) {
+      setFeil(err instanceof ApiFeil ? err.message : "Kunne ikke lagre.");
+    } finally {
+      setLaster(false);
+    }
+  }
+
+  async function slett() {
+    setFeil(null);
+    setLaster(true);
+    try {
+      await onSlett();
+    } catch (err) {
+      setFeil(err instanceof ApiFeil ? err.message : "Kunne ikke slette.");
+      setLaster(false);
+    }
+  }
+
+  if (!rediger) {
+    return (
+      <Kort>
+        <View style={stiler.radMedHandling}>
+          <View style={{ flex: 1 }}>
+            <Text style={stiler.radTittel}>{tittel}</Text>
+            {undertekst ? <Text style={stiler.radUndertekst}>{undertekst}</Text> : null}
+          </View>
+          <Pressable onPress={apne} hitSlop={8}>
+            <Text style={stiler.lenkeTekst}>Rediger</Text>
+          </Pressable>
+        </View>
+      </Kort>
+    );
+  }
+
+  return (
+    <Kort>
+      {felter.map((f) => (
+        <TekstFelt
+          key={f.nokkel}
+          label={f.label}
+          value={verdier[f.nokkel] ?? ""}
+          onChangeText={(v) => setVerdier((forrige) => ({ ...forrige, [f.nokkel]: v }))}
+          placeholder={f.placeholder}
+        />
+      ))}
+      {feil && <FeilBanner tekst={feil} />}
+      {bekreftSlett ? (
+        <View style={stiler.knappRad}>
+          <View style={stiler.knappRadCelle}>
+            <Knapp tittel="Avbryt" onPress={() => setBekreftSlett(false)} variant="sekundaer" disabled={laster} />
+          </View>
+          <View style={stiler.knappRadCelle}>
+            <Knapp tittel="Bekreft sletting" onPress={slett} disabled={laster} />
+          </View>
+        </View>
+      ) : (
+        <View style={stiler.knappRad}>
+          <View style={stiler.knappRadCelle}>
+            <Knapp tittel="Avbryt" onPress={() => setRediger(false)} variant="sekundaer" disabled={laster} />
+          </View>
+          <View style={stiler.knappRadCelle}>
+            <Knapp tittel="Slett" onPress={() => setBekreftSlett(true)} variant="sekundaer" disabled={laster} />
+          </View>
+          <View style={stiler.knappRadCelle}>
+            <Knapp tittel="Lagre" onPress={lagre} disabled={laster} />
+          </View>
+        </View>
+      )}
+    </Kort>
+  );
+}
+
+/** Merke-rad med navn + logo (opplasting av fil, ikke URL). */
+function RedigerMerkeRad({
+  merke,
+  onEndret,
+}: {
+  merke: Merke;
+  onEndret: () => Promise<void>;
+}) {
+  const [rediger, setRediger] = useState(false);
+  const [navn, setNavn] = useState(merke.navn);
+  const [logoUrl, setLogoUrl] = useState<string | null>(merke.logoUrl);
+  const [feil, setFeil] = useState<string | null>(null);
+  const [laster, setLaster] = useState(false);
+  const [bildeLaster, setBildeLaster] = useState(false);
+  const [bekreftSlett, setBekreftSlett] = useState(false);
+
+  function apne() {
+    setNavn(merke.navn);
+    setLogoUrl(merke.logoUrl);
+    setFeil(null);
+    setBekreftSlett(false);
+    setRediger(true);
+  }
+
+  async function bildeValgt(bilde: { base64: string }) {
+    setFeil(null);
+    setBildeLaster(true);
+    try {
+      const { url } = await lastOppBilde(bilde.base64);
+      await oppdaterMerke(merke.id, { logoUrl: url });
+      setLogoUrl(url);
+      await onEndret();
+    } catch (err) {
+      setFeil(err instanceof Error ? `Logo feilet: ${err.message}` : "Kunne ikke laste opp logoen.");
+    } finally {
+      setBildeLaster(false);
+    }
+  }
+
+  async function fjernLogo() {
+    setBildeLaster(true);
+    try {
+      await oppdaterMerke(merke.id, { logoUrl: null });
+      setLogoUrl(null);
+      await onEndret();
+    } catch (err) {
+      setFeil(err instanceof ApiFeil ? err.message : "Kunne ikke fjerne logoen.");
+    } finally {
+      setBildeLaster(false);
+    }
+  }
+
+  async function lagreNavn() {
+    setFeil(null);
+    if (!navn.trim()) {
+      setFeil("Fyll ut navn.");
+      return;
+    }
+    setLaster(true);
+    try {
+      await oppdaterMerke(merke.id, { navn: navn.trim() });
+      await onEndret();
+      setRediger(false);
+    } catch (err) {
+      setFeil(err instanceof ApiFeil ? err.message : "Kunne ikke lagre.");
+    } finally {
+      setLaster(false);
+    }
+  }
+
+  async function slett() {
+    setFeil(null);
+    setLaster(true);
+    try {
+      await slettMerke(merke.id);
+      await onEndret();
+    } catch (err) {
+      setFeil(err instanceof ApiFeil ? err.message : "Kunne ikke slette.");
+      setLaster(false);
+    }
+  }
+
+  if (!rediger) {
+    return (
+      <Kort>
+        <View style={stiler.radMedHandling}>
+          <View style={stiler.merkeRad}>
+            <Miniatyr url={merke.logoUrl} bokstav={merke.navn} storrelse={32} />
+            <Text style={stiler.radTittel}>{merke.navn}</Text>
+          </View>
+          <Pressable onPress={apne} hitSlop={8}>
+            <Text style={stiler.lenkeTekst}>Rediger</Text>
+          </Pressable>
+        </View>
+      </Kort>
+    );
+  }
+
+  return (
+    <Kort>
+      <TekstFelt label="Navn" value={navn} onChangeText={setNavn} />
+      {logoUrl ? (
+        <View style={stiler.logoForhandsvisning}>
+          <Image source={{ uri: logoUrl }} style={stiler.logoBilde} resizeMode="contain" />
+        </View>
+      ) : null}
+      <BildeVelger laster={bildeLaster} onValgt={bildeValgt} onFeil={setFeil} />
+      {logoUrl ? (
+        <Knapp tittel="Fjern logo" onPress={fjernLogo} disabled={bildeLaster} variant="sekundaer" />
+      ) : null}
+      {feil && <FeilBanner tekst={feil} />}
+      {bekreftSlett ? (
+        <View style={stiler.knappRad}>
+          <View style={stiler.knappRadCelle}>
+            <Knapp tittel="Avbryt" onPress={() => setBekreftSlett(false)} variant="sekundaer" disabled={laster} />
+          </View>
+          <View style={stiler.knappRadCelle}>
+            <Knapp tittel="Bekreft sletting" onPress={slett} disabled={laster} />
+          </View>
+        </View>
+      ) : (
+        <View style={stiler.knappRad}>
+          <View style={stiler.knappRadCelle}>
+            <Knapp tittel="Lukk" onPress={() => setRediger(false)} variant="sekundaer" disabled={laster} />
+          </View>
+          <View style={stiler.knappRadCelle}>
+            <Knapp tittel="Slett" onPress={() => setBekreftSlett(true)} variant="sekundaer" disabled={laster} />
+          </View>
+          <View style={stiler.knappRadCelle}>
+            <Knapp tittel="Lagre navn" onPress={lagreNavn} disabled={laster} />
+          </View>
+        </View>
+      )}
+    </Kort>
   );
 }
 
@@ -196,9 +463,23 @@ function BedriftSeksjon() {
 
 function MerkeSeksjon({ merker, onLagtTil }: { merker: Merke[]; onLagtTil: () => Promise<void> }) {
   const [navn, setNavn] = useState("");
-  const [logoUrl, setLogoUrl] = useState("");
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [feil, setFeil] = useState<string | null>(null);
   const [laster, setLaster] = useState(false);
+  const [bildeLaster, setBildeLaster] = useState(false);
+
+  async function bildeValgt(bilde: { base64: string }) {
+    setFeil(null);
+    setBildeLaster(true);
+    try {
+      const { url } = await lastOppBilde(bilde.base64);
+      setLogoUrl(url);
+    } catch (err) {
+      setFeil(err instanceof Error ? `Logo feilet: ${err.message}` : "Kunne ikke laste opp logoen.");
+    } finally {
+      setBildeLaster(false);
+    }
+  }
 
   async function leggTil() {
     setFeil(null);
@@ -208,9 +489,9 @@ function MerkeSeksjon({ merker, onLagtTil }: { merker: Merke[]; onLagtTil: () =>
     }
     setLaster(true);
     try {
-      await opprettMerke({ navn: navn.trim(), logoUrl: logoUrl.trim() || undefined });
+      await opprettMerke({ navn: navn.trim(), logoUrl: logoUrl ?? undefined });
       setNavn("");
-      setLogoUrl("");
+      setLogoUrl(null);
       await onLagtTil();
     } catch (err) {
       setFeil(err instanceof ApiFeil ? err.message : "Kunne ikke opprette merke.");
@@ -222,29 +503,23 @@ function MerkeSeksjon({ merker, onLagtTil }: { merker: Merke[]; onLagtTil: () =>
   return (
     <View style={stiler.seksjonInnhold}>
       <Text style={stiler.hjelpetekst}>
-        Brukes for gruppering og filtrering av varianter etter merke/kunde-logo på Beholdning.
+        Brukes for gruppering og filtrering av varianter etter merke/kunde-logo på Beholdning og
+        Uttak. Last opp en logo-fil fra kamera eller bildebibliotek.
       </Text>
       <TekstFelt label="Navn" value={navn} onChangeText={setNavn} placeholder="F.eks. Acme Events" />
-      <TekstFelt
-        label="Logo-URL (valgfritt)"
-        value={logoUrl}
-        onChangeText={setLogoUrl}
-        placeholder="https://..."
-      />
+      {logoUrl ? (
+        <View style={stiler.logoForhandsvisning}>
+          <Image source={{ uri: logoUrl }} style={stiler.logoBilde} resizeMode="contain" />
+        </View>
+      ) : null}
+      <BildeVelger laster={bildeLaster} onValgt={bildeValgt} onFeil={setFeil} />
       {feil && <FeilBanner tekst={feil} />}
-      <Knapp tittel="Legg til merke" onPress={leggTil} disabled={laster} variant="sekundaer" />
+      <Knapp tittel="Legg til merke" onPress={leggTil} disabled={laster || bildeLaster} variant="sekundaer" />
       <View style={stiler.liste}>
         {merker.length === 0 ? (
           <TomListeTekst tekst="Ingen merker registrert ennå." />
         ) : (
-          merker.map((m) => (
-            <Kort key={m.id}>
-              <View style={stiler.merkeRad}>
-                <Miniatyr url={m.logoUrl} bokstav={m.navn} storrelse={32} />
-                <Text style={stiler.radTittel}>{m.navn}</Text>
-              </View>
-            </Kort>
-          ))
+          merker.map((m) => <RedigerMerkeRad key={m.id} merke={m} onEndret={onLagtTil} />)
         )}
       </View>
     </View>
@@ -441,9 +716,19 @@ function LeverandorSeksjon({
           <TomListeTekst tekst="Ingen leverandører registrert ennå." />
         ) : (
           leverandorer.map((l) => (
-            <Kort key={l.id}>
-              <Text style={stiler.radTittel}>{l.navn}</Text>
-            </Kort>
+            <RedigerRad
+              key={l.id}
+              tittel={l.navn}
+              felter={[{ nokkel: "navn", label: "Navn", start: l.navn }]}
+              onLagre={async (v) => {
+                await oppdaterLeverandor(l.id, { navn: v.navn });
+                await onLagtTil();
+              }}
+              onSlett={async () => {
+                await slettLeverandor(l.id);
+                await onLagtTil();
+              }}
+            />
           ))
         )}
       </View>
@@ -493,10 +778,23 @@ function LokasjonSeksjon({
           <TomListeTekst tekst="Ingen lokasjoner registrert ennå." />
         ) : (
           lokasjoner.map((l) => (
-            <Kort key={l.id}>
-              <Text style={stiler.radTittel}>{l.navn}</Text>
-              <Text style={stiler.radUndertekst}>{l.type}</Text>
-            </Kort>
+            <RedigerRad
+              key={l.id}
+              tittel={l.navn}
+              undertekst={l.type}
+              felter={[
+                { nokkel: "navn", label: "Navn", start: l.navn },
+                { nokkel: "type", label: "Type", start: l.type },
+              ]}
+              onLagre={async (v) => {
+                await oppdaterLokasjon(l.id, { navn: v.navn, type: v.type });
+                await onLagtTil();
+              }}
+              onSlett={async () => {
+                await slettLokasjon(l.id);
+                await onLagtTil();
+              }}
+            />
           ))
         )}
       </View>
@@ -560,10 +858,23 @@ function KunderSeksjon({
           <TomListeTekst tekst="Ingen kunder registrert ennå." />
         ) : (
           kunder.map((k) => (
-            <Kort key={k.id}>
-              <Text style={stiler.radTittel}>{k.navn}</Text>
-              {k.referanse && <Text style={stiler.radUndertekst}>Kundenr: {k.referanse}</Text>}
-            </Kort>
+            <RedigerRad
+              key={k.id}
+              tittel={k.navn}
+              undertekst={k.referanse ? `Kundenr: ${k.referanse}` : undefined}
+              felter={[
+                { nokkel: "navn", label: "Navn", start: k.navn },
+                { nokkel: "kundenr", label: "Kundenr (valgfritt)", start: k.referanse ?? "", valgfri: true },
+              ]}
+              onLagre={async (v) => {
+                await oppdaterKontekst(k.id, { navn: v.navn, referanse: v.kundenr || null });
+                await onLagtTil();
+              }}
+              onSlett={async () => {
+                await slettKontekst(k.id);
+                await onLagtTil();
+              }}
+            />
           ))
         )}
       </View>
@@ -613,9 +924,19 @@ function FormaalSeksjon({
           <TomListeTekst tekst="Ingen formål registrert ennå." />
         ) : (
           formaal.map((f) => (
-            <Kort key={f.id}>
-              <Text style={stiler.radTittel}>{f.navn}</Text>
-            </Kort>
+            <RedigerRad
+              key={f.id}
+              tittel={f.navn}
+              felter={[{ nokkel: "navn", label: "Navn", start: f.navn }]}
+              onLagre={async (v) => {
+                await oppdaterFormaal(f.id, { navn: v.navn });
+                await onLagtTil();
+              }}
+              onSlett={async () => {
+                await slettFormaal(f.id);
+                await onLagtTil();
+              }}
+            />
           ))
         )}
       </View>
@@ -659,10 +980,23 @@ function BrukerSeksjon({ brukere, onLagtTil }: { brukere: Bruker[]; onLagtTil: (
           <TomListeTekst tekst="Ingen brukere registrert ennå." />
         ) : (
           brukere.map((b) => (
-            <Kort key={b.id}>
-              <Text style={stiler.radTittel}>{b.navn}</Text>
-              <Text style={stiler.radUndertekst}>{b.rolle}</Text>
-            </Kort>
+            <RedigerRad
+              key={b.id}
+              tittel={b.navn}
+              undertekst={b.epost ? `${b.rolle} · ${b.epost}` : b.rolle}
+              felter={[
+                { nokkel: "navn", label: "Navn", start: b.navn },
+                { nokkel: "rolle", label: "Rolle", start: b.rolle },
+              ]}
+              onLagre={async (v) => {
+                await oppdaterBruker(b.id, { navn: v.navn, rolle: v.rolle });
+                await onLagtTil();
+              }}
+              onSlett={async () => {
+                await slettBruker(b.id);
+                await onLagtTil();
+              }}
+            />
           ))
         )}
       </View>
@@ -724,6 +1058,24 @@ const stiler = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
+    flex: 1,
+  },
+  radMedHandling: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  lenkeTekst: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#1a6f3d",
+  },
+  knappRad: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  knappRadCelle: {
+    flex: 1,
   },
   logoForhandsvisning: {
     alignItems: "center",

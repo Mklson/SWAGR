@@ -3,10 +3,12 @@ import { ScrollView, StyleSheet, Text, View } from "react-native";
 import {
   ApiFeil,
   hentRapportFleksibel,
+  hentRapportInngaende,
   hentRapportKontekst,
   hentRapportPeriode,
   listBevegelser,
   listKontekster,
+  listLeverandorer,
   listLokasjoner,
   listMerker,
   listVarer,
@@ -17,9 +19,11 @@ import { formatterKroner, oreTilKrTekst } from "../lib/valuta";
 import type {
   Bevegelse,
   Kontekst,
+  Leverandor,
   Lokasjon,
   Merke,
   RapportFleksibelRad,
+  RapportInngaendeRad,
   RapportKontekstRad,
   RapportPeriodeRad,
   Vare,
@@ -30,7 +34,7 @@ import {
   FeilBanner,
   Knapp,
   Kort,
-  SeksjonsTittel,
+  Sammenleggbar,
   TomListeTekst,
   VelgFelt,
 } from "../components/ui";
@@ -40,26 +44,41 @@ function dagensDato(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+// Rapportene er foldet sammen når man kommer inn; hver åpnes uavhengig.
+const RAPPORTER = [
+  { nokkel: "fleksibel", tittel: "Fleksibel rapport: merke og/eller kunde" },
+  { nokkel: "inngaende", tittel: "Inngående varer (varemottak)" },
+  { nokkel: "periode", tittel: "Totalt per bevegelsestype" },
+  { nokkel: "kontekst", tittel: "Totalt per variant for én kunde" },
+  { nokkel: "historikk", tittel: "Full historikk for en kunde" },
+] as const;
+
 export function RapporterScreen() {
   const [varer, setVarer] = useState<Vare[]>([]);
   const [varianter, setVarianter] = useState<Variant[]>([]);
   const [lokasjoner, setLokasjoner] = useState<Lokasjon[]>([]);
   const [kontekster, setKontekster] = useState<Kontekst[]>([]);
   const [merker, setMerker] = useState<Merke[]>([]);
+  const [leverandorer, setLeverandorer] = useState<Leverandor[]>([]);
+  const [apne, setApne] = useState<Record<string, boolean>>({});
+
+  const toggle = (n: string) => setApne((forrige) => ({ ...forrige, [n]: !forrige[n] }));
 
   const lastInn = useCallback(async () => {
-    const [v, va, l, k, m] = await Promise.all([
+    const [v, va, l, k, m, lev] = await Promise.all([
       listVarer(),
       listVarianter(),
       listLokasjoner(),
       listKontekster(),
       listMerker(),
+      listLeverandorer(),
     ]);
     setVarer(v);
     setVarianter(va);
     setLokasjoner(l);
     setKontekster(k);
     setMerker(m);
+    setLeverandorer(lev);
   }, []);
 
   useEffect(() => {
@@ -82,27 +101,69 @@ export function RapporterScreen() {
     [kontekster],
   );
   const merkeAlternativer = useMemo(() => merker.map((m) => ({ verdi: m.id, label: m.navn })), [merker]);
+  const leverandorAlternativer = useMemo(
+    () => leverandorer.map((l) => ({ verdi: l.id, label: l.navn })),
+    [leverandorer],
+  );
   const merkeMap = useMemo(() => new Map(merker.map((m) => [m.id, m])), [merker]);
   const kontekstMap = useMemo(() => new Map(kontekster.map((k) => [k.id, k])), [kontekster]);
 
-  return (
-    <ScrollView style={stiler.rot} contentContainerStyle={stiler.scrollInnhold}>
-      <Text style={stiler.tittel}>Rapporter</Text>
+  function variantNavn(variantId: string) {
+    const variant = variantMap.get(variantId);
+    const vareNavn = variant ? vareMap.get(variant.vareId)?.navn : undefined;
+    return `${vareNavn ?? "Ukjent vare"} — ${variant?.sku ?? "?"}`;
+  }
 
+  const seksjoner: Record<string, React.ReactNode> = {
+    fleksibel: (
       <FleksibelRapport
         merkeAlternativer={merkeAlternativer}
         kontekstAlternativer={kontekstAlternativer}
         merkeMap={merkeMap}
         kontekstMap={kontekstMap}
       />
-      <PeriodeRapport lokasjonAlternativer={lokasjonAlternativer} kontekstAlternativer={kontekstAlternativer} />
-      <KontekstRapport kontekstAlternativer={kontekstAlternativer} vareMap={vareMap} variantMap={variantMap} />
+    ),
+    inngaende: (
+      <InngaendeRapport
+        lokasjonAlternativer={lokasjonAlternativer}
+        merkeAlternativer={merkeAlternativer}
+        leverandorAlternativer={leverandorAlternativer}
+        variantNavn={variantNavn}
+      />
+    ),
+    periode: (
+      <PeriodeRapport
+        lokasjonAlternativer={lokasjonAlternativer}
+        kontekstAlternativer={kontekstAlternativer}
+      />
+    ),
+    kontekst: (
+      <KontekstRapport kontekstAlternativer={kontekstAlternativer} variantNavn={variantNavn} />
+    ),
+    historikk: (
       <KundeHistorikkSeksjon
         kontekstAlternativer={kontekstAlternativer}
         lokasjoner={lokasjoner}
-        vareMap={vareMap}
-        variantMap={variantMap}
+        variantNavn={variantNavn}
       />
+    ),
+  };
+
+  return (
+    <ScrollView style={stiler.rot} contentContainerStyle={stiler.scrollInnhold}>
+      <Text style={stiler.tittel}>Rapporter</Text>
+      <Text style={stiler.undertekst}>Klikk på en rapport for å folde den ut.</Text>
+
+      {RAPPORTER.map((r) => (
+        <Sammenleggbar
+          key={r.nokkel}
+          tittel={r.tittel}
+          apen={!!apne[r.nokkel]}
+          onToggle={() => toggle(r.nokkel)}
+        >
+          {seksjoner[r.nokkel]}
+        </Sammenleggbar>
+      ))}
     </ScrollView>
   );
 }
@@ -155,9 +216,7 @@ function FleksibelRapport({
 
   // Grupperer etter det som IKKE er fastsatt av et filter: kun merke valgt ->
   // bryt ned per kunde; kun kontekst valgt -> bryt ned per merke; begge eller
-  // ingen valgt -> bryt ned per kombinasjon. Dette er selve poenget med
-  // rapporten - se ett merke på tvers av alle kunder, eller én kunde på
-  // tvers av alle merker, uten å måtte velge den andre på forhånd.
+  // ingen valgt -> bryt ned per kombinasjon.
   const grupper = useMemo<Gruppe[]>(() => {
     if (!rader) return [];
     const nøkkel = (r: RapportFleksibelRad) => {
@@ -198,8 +257,6 @@ function FleksibelRapport({
   const totalMedVerdi = grupper.reduce((s, g) => s + g.antallMedVerdi, 0);
 
   function eksporter() {
-    // Én kolonne per bevegelsestype med rene tall - en celle skal aldri
-    // blande tekst og tall (f.eks. "ut 220"), da regner ikke Excel på den.
     eksporterCsv(
       `rapport-fleksibel-${dagensDato()}`,
       ["Navn", "Inn", "Ut", "Retur", "Svinn", "Internbruk", "Antall totalt", "Verdi (kr)"],
@@ -217,8 +274,7 @@ function FleksibelRapport({
   }
 
   return (
-    <View style={stiler.seksjon}>
-      <SeksjonsTittel>Fleksibel rapport: merke og/eller kunde</SeksjonsTittel>
+    <>
       <Text style={stiler.hjelpetekst}>
         Velg kun merke for å se det merket på tvers av alle kunder, kun kunde for å se den
         på tvers av alle merker, begge for én kombinasjon, eller ingen for alt.
@@ -285,7 +341,144 @@ function FleksibelRapport({
           )}
         </View>
       )}
-    </View>
+    </>
+  );
+}
+
+function InngaendeRapport({
+  lokasjonAlternativer,
+  merkeAlternativer,
+  leverandorAlternativer,
+  variantNavn,
+}: {
+  lokasjonAlternativer: { verdi: string; label: string }[];
+  merkeAlternativer: { verdi: string; label: string }[];
+  leverandorAlternativer: { verdi: string; label: string }[];
+  variantNavn: (variantId: string) => string;
+}) {
+  const [lokasjonId, setLokasjonId] = useState<string | null>(null);
+  const [merkeId, setMerkeId] = useState<string | null>(null);
+  const [leverandorId, setLeverandorId] = useState<string | null>(null);
+  const [fra, setFra] = useState("");
+  const [til, setTil] = useState("");
+  const [rader, setRader] = useState<RapportInngaendeRad[] | null>(null);
+  const [feil, setFeil] = useState<string | null>(null);
+  const [laster, setLaster] = useState(false);
+
+  async function hent() {
+    setFeil(null);
+    setLaster(true);
+    try {
+      const resultat = await hentRapportInngaende({
+        lokasjonId: lokasjonId ?? undefined,
+        merkeId: merkeId ?? undefined,
+        leverandorId: leverandorId ?? undefined,
+        fra: fra.trim() || undefined,
+        til: til.trim() || undefined,
+      });
+      setRader(resultat);
+    } catch (err) {
+      setFeil(err instanceof ApiFeil ? err.message : "Kunne ikke hente rapport.");
+    } finally {
+      setLaster(false);
+    }
+  }
+
+  const totalAntall = (rader ?? []).reduce((s, r) => s + r.antall, 0);
+  const totalVerdi = (rader ?? []).reduce((s, r) => s + r.verdiOre, 0);
+  const totalMedVerdi = (rader ?? []).reduce((s, r) => s + r.antallMedVerdi, 0);
+
+  function eksporter() {
+    if (!rader) return;
+    eksporterCsv(
+      `rapport-inngaende-${dagensDato()}`,
+      ["Vare/variant", "Antall inn", "Verdi (kr)", "Siste varemottak"],
+      rader.map((r) => [
+        variantNavn(r.variantId),
+        r.antall,
+        oreTilKrTekst(r.verdiOre),
+        r.sisteInn ? new Date(r.sisteInn).toLocaleDateString("nb-NO") : "",
+      ]),
+    );
+  }
+
+  return (
+    <>
+      <Text style={stiler.hjelpetekst}>
+        Alt som er registrert som varemottak (inn på lager), summert per artikkel. Filtrer på
+        lokasjon, merke, leverandør og periode.
+      </Text>
+
+      <VelgFelt
+        label="Lokasjon (valgfritt)"
+        valgt={lokasjonId}
+        alternativer={lokasjonAlternativer}
+        onVelg={setLokasjonId}
+        tomtekst="Alle lokasjoner"
+      />
+      <VelgFelt
+        label="Merke (valgfritt)"
+        valgt={merkeId}
+        alternativer={merkeAlternativer}
+        onVelg={setMerkeId}
+        tomtekst="Alle merker"
+      />
+      <VelgFelt
+        label="Leverandør (valgfritt)"
+        valgt={leverandorId}
+        alternativer={leverandorAlternativer}
+        onVelg={setLeverandorId}
+        tomtekst="Alle leverandører"
+      />
+      <Periodevelger fra={fra} til={til} onFraChange={setFra} onTilChange={setTil} />
+
+      {feil && <FeilBanner tekst={feil} />}
+      <Knapp tittel="Hent rapport" onPress={hent} disabled={laster} variant="sekundaer" />
+
+      {rader !== null && (
+        <View style={stiler.resultatListe}>
+          {rader.length === 0 ? (
+            <TomListeTekst tekst="Ingen varemottak matcher filteret." />
+          ) : (
+            <>
+              <Kort>
+                <Text style={stiler.totalTittel}>Totalt tatt inn</Text>
+                <Text style={stiler.totalVerdi}>{formatterKroner(totalVerdi)}</Text>
+                <Text style={stiler.hjelpetekst}>
+                  {totalAntall} stk · {rader.length} artikler
+                </Text>
+                {totalMedVerdi < totalAntall && (
+                  <Text style={stiler.delvisTekst}>
+                    Verdi basert på {totalMedVerdi} av {totalAntall} stk — resten mangler registrert
+                    kostpris.
+                  </Text>
+                )}
+              </Kort>
+              <Knapp tittel="📊 Eksporter til Excel (CSV)" onPress={eksporter} variant="sekundaer" />
+              {rader.map((r) => (
+                <Kort key={r.variantId}>
+                  <Text style={stiler.radTittel}>{variantNavn(r.variantId)}</Text>
+                  <View style={stiler.resultatRad}>
+                    <Text style={stiler.resultatType}>
+                      {r.sisteInn
+                        ? `Siste: ${new Date(r.sisteInn).toLocaleDateString("nb-NO")}`
+                        : ""}
+                    </Text>
+                    <Text style={stiler.resultatAntall}>{r.antall} stk</Text>
+                  </View>
+                  {r.antallMedVerdi > 0 && (
+                    <Text style={stiler.radVerdi}>
+                      {formatterKroner(r.verdiOre)}
+                      {r.antallMedVerdi < r.antall ? ` (${r.antallMedVerdi} av ${r.antall} stk)` : ""}
+                    </Text>
+                  )}
+                </Kort>
+              ))}
+            </>
+          )}
+        </View>
+      )}
+    </>
   );
 }
 
@@ -332,8 +525,7 @@ function PeriodeRapport({
   }
 
   return (
-    <View style={stiler.seksjon}>
-      <SeksjonsTittel>Totalt per bevegelsestype</SeksjonsTittel>
+    <>
       <Text style={stiler.hjelpetekst}>
         F.eks. totalt svinn denne måneden, eller alt som har gått ut fra en lokasjon i en periode.
       </Text>
@@ -382,18 +574,16 @@ function PeriodeRapport({
           )}
         </View>
       )}
-    </View>
+    </>
   );
 }
 
 function KontekstRapport({
   kontekstAlternativer,
-  vareMap,
-  variantMap,
+  variantNavn,
 }: {
   kontekstAlternativer: { verdi: string; label: string; undertekst?: string }[];
-  vareMap: Map<string, Vare>;
-  variantMap: Map<string, Variant>;
+  variantNavn: (variantId: string) => string;
 }) {
   const [kontekstId, setKontekstId] = useState<string | null>(null);
   const [fra, setFra] = useState("");
@@ -401,12 +591,6 @@ function KontekstRapport({
   const [rader, setRader] = useState<RapportKontekstRad[] | null>(null);
   const [feil, setFeil] = useState<string | null>(null);
   const [laster, setLaster] = useState(false);
-
-  function variantNavn(variantId: string) {
-    const variant = variantMap.get(variantId);
-    const vareNavn = variant ? vareMap.get(variant.vareId)?.navn : undefined;
-    return `${vareNavn ?? "Ukjent vare"} — ${variant?.sku ?? "?"}`;
-  }
 
   async function hent() {
     setFeil(null);
@@ -431,15 +615,14 @@ function KontekstRapport({
   function eksporter() {
     if (!rader) return;
     eksporterCsv(
-      `rapport-formaal-${dagensDato()}`,
+      `rapport-kunde-${dagensDato()}`,
       ["Vare/variant", "Type", "Antall", "Verdi (kr)"],
       rader.map((r) => [variantNavn(r.variantId), r.type, r.antall, oreTilKrTekst(r.verdiOre)]),
     );
   }
 
   return (
-    <View style={stiler.seksjon}>
-      <SeksjonsTittel>Totalt per variant for én kunde</SeksjonsTittel>
+    <>
       <Text style={stiler.hjelpetekst}>
         F.eks. hvor mye som er levert til en gitt kunde, eller brukt på et gitt prosjekt.
       </Text>
@@ -495,20 +678,18 @@ function KontekstRapport({
           )}
         </View>
       )}
-    </View>
+    </>
   );
 }
 
 function KundeHistorikkSeksjon({
   kontekstAlternativer,
   lokasjoner,
-  vareMap,
-  variantMap,
+  variantNavn,
 }: {
   kontekstAlternativer: { verdi: string; label: string; undertekst?: string }[];
   lokasjoner: Lokasjon[];
-  vareMap: Map<string, Vare>;
-  variantMap: Map<string, Variant>;
+  variantNavn: (variantId: string) => string;
 }) {
   const [kontekstId, setKontekstId] = useState<string | null>(null);
   const [bevegelser, setBevegelser] = useState<Bevegelse[] | null>(null);
@@ -516,12 +697,6 @@ function KundeHistorikkSeksjon({
   const [laster, setLaster] = useState(false);
 
   const lokasjonMap = useMemo(() => new Map(lokasjoner.map((l) => [l.id, l])), [lokasjoner]);
-
-  function variantNavn(variantId: string) {
-    const variant = variantMap.get(variantId);
-    const vareNavn = variant ? vareMap.get(variant.vareId)?.navn : undefined;
-    return `${vareNavn ?? "Ukjent vare"} — ${variant?.sku ?? "?"}`;
-  }
 
   async function hent() {
     setFeil(null);
@@ -556,8 +731,7 @@ function KundeHistorikkSeksjon({
   }
 
   return (
-    <View style={stiler.seksjon}>
-      <SeksjonsTittel>Full historikk for en kunde</SeksjonsTittel>
+    <>
       <Text style={stiler.hjelpetekst}>
         Hver enkelt bevegelse i rekkefølge — nyeste først. Nyttig for å se nøyaktig hva som har
         skjedd med én kunde, ikke bare summerte tall.
@@ -596,7 +770,7 @@ function KundeHistorikkSeksjon({
           )}
         </View>
       )}
-    </View>
+    </>
   );
 }
 
@@ -609,23 +783,20 @@ const stiler = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 20,
     paddingBottom: 32,
-    gap: 8,
+    gap: 10,
   },
   tittel: {
     fontSize: 24,
     fontWeight: "700",
   },
-  seksjon: {
-    gap: 12,
-    marginTop: 16,
-    paddingTop: 16,
-    borderTopWidth: 1,
-    borderTopColor: "#eee",
+  undertekst: {
+    fontSize: 14,
+    color: "#555",
+    marginBottom: 4,
   },
   hjelpetekst: {
     fontSize: 13,
     color: "#888",
-    marginTop: -6,
   },
   resultatListe: {
     gap: 8,

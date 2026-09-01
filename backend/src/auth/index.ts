@@ -59,17 +59,33 @@ export async function registrerAuth(app: FastifyInstance, krevAuth: boolean) {
       where: { id: payload.sub },
       include: { bedrifter: true },
     });
-    if (!bruker || !bruker.epost || bruker.bedrifter.length === 0) {
+    if (!bruker || !bruker.epost || (bruker.bedrifter.length === 0 && !bruker.superadmin)) {
       return reply.code(401).send({ error: "Ugyldig okt - logg inn pa nytt." });
     }
 
-    // Aktiv bedrift: fra x-bedrift-id-header hvis gyldig medlemskap, ellers første.
-    const ønsket = request.headers["x-bedrift-id"];
-    const medlemskap =
-      (typeof ønsket === "string" && bruker.bedrifter.find((m) => m.bedriftId === ønsket)) ||
-      bruker.bedrifter[0];
-
     request.bruker = { id: bruker.id, navn: bruker.navn, epost: bruker.epost };
+
+    const ønsket = typeof request.headers["x-bedrift-id"] === "string"
+      ? (request.headers["x-bedrift-id"] as string)
+      : undefined;
+
+    if (bruker.superadmin) {
+      // Global admin: kan operere i en hvilken som helst bedrift, alltid som admin.
+      const bedriftId =
+        (ønsket && (await prisma.bedrift.findUnique({ where: { id: ønsket }, select: { id: true } }))?.id) ||
+        bruker.bedrifter[0]?.bedriftId ||
+        (await prisma.bedrift.findFirst({ select: { id: true }, orderBy: { opprettet: "asc" } }))?.id;
+      if (!bedriftId) {
+        return reply.code(401).send({ error: "Ingen bedrifter finnes." });
+      }
+      request.bedriftId = bedriftId;
+      request.rolle = "admin";
+      return;
+    }
+
+    // Aktiv bedrift: fra x-bedrift-id-header hvis gyldig medlemskap, ellers første.
+    const medlemskap =
+      (ønsket && bruker.bedrifter.find((m) => m.bedriftId === ønsket)) || bruker.bedrifter[0];
     request.bedriftId = medlemskap.bedriftId;
     request.rolle = medlemskap.rolle;
   });
@@ -99,7 +115,11 @@ export async function sikreAdmin() {
   let bruker = await prisma.bruker.findUnique({ where: { epost } });
   if (!bruker) {
     const passordHash = await hashPassord(passord);
-    bruker = await prisma.bruker.create({ data: { navn: "Administrator", epost, passordHash } });
+    bruker = await prisma.bruker.create({
+      data: { navn: "Administrator", epost, passordHash, superadmin: true },
+    });
+  } else if (!bruker.superadmin) {
+    bruker = await prisma.bruker.update({ where: { id: bruker.id }, data: { superadmin: true } });
   }
 
   await prisma.brukerBedrift.upsert({

@@ -341,9 +341,23 @@ function MerkeVelger({
 }) {
   const [visNy, setVisNy] = useState(false);
   const [navn, setNavn] = useState("");
-  const [logoUrl, setLogoUrl] = useState("");
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [feil, setFeil] = useState<string | null>(null);
   const [laster, setLaster] = useState(false);
+  const [bildeLaster, setBildeLaster] = useState(false);
+
+  async function bildeValgt(bilde: { base64: string }) {
+    setFeil(null);
+    setBildeLaster(true);
+    try {
+      const { url } = await lastOppBilde(bilde.base64);
+      setLogoUrl(url);
+    } catch (err) {
+      setFeil(err instanceof Error ? `Logo feilet: ${err.message}` : "Kunne ikke laste opp logoen.");
+    } finally {
+      setBildeLaster(false);
+    }
+  }
 
   async function opprett() {
     setFeil(null);
@@ -353,11 +367,11 @@ function MerkeVelger({
     }
     setLaster(true);
     try {
-      const m = await opprettMerke({ navn: navn.trim(), logoUrl: logoUrl.trim() || undefined });
+      const m = await opprettMerke({ navn: navn.trim(), logoUrl: logoUrl ?? undefined });
       await onMerkeOpprettet();
       onVelg(m.id);
       setNavn("");
-      setLogoUrl("");
+      setLogoUrl(null);
       setVisNy(false);
     } catch (err) {
       setFeil(err instanceof ApiFeil ? err.message : "Kunne ikke opprette merket.");
@@ -383,12 +397,8 @@ function MerkeVelger({
             onChangeText={setNavn}
             placeholder="F.eks. Acme Events"
           />
-          <TekstFelt
-            label="Logo-URL (valgfritt)"
-            value={logoUrl}
-            onChangeText={setLogoUrl}
-            placeholder="https://..."
-          />
+          {logoUrl ? <Miniatyr url={logoUrl} storrelse={48} /> : null}
+          <BildeVelger laster={bildeLaster} onValgt={bildeValgt} onFeil={setFeil} />
           {feil && <FeilBanner tekst={feil} />}
           <View style={stiler.knappRad}>
             <View style={stiler.knappRadCelle}>
@@ -400,7 +410,7 @@ function MerkeVelger({
               />
             </View>
             <View style={stiler.knappRadCelle}>
-              <Knapp tittel="Opprett merke" onPress={opprett} disabled={laster} />
+              <Knapp tittel="Opprett merke" onPress={opprett} disabled={laster || bildeLaster} />
             </View>
           </View>
         </View>

@@ -191,6 +191,10 @@ model Bruker {
   epost       String? @unique
   passordHash String? @map("passord_hash")
 
+  // Global administrator: admin i alle bedrifter (nåværende og fremtidige),
+  // uavhengig av BrukerBedrift-rollen. Kun for systemeier-kontoen.
+  superadmin Boolean @default(false)
+
   bedrifter     BrukerBedrift[]
   bevegelser    Bevegelse[]
   reservasjoner Reservasjon[]

@@ -188,6 +188,62 @@ export async function beregnRapportFleksibel(
   return Array.from(totals.values());
 }
 
+/** Inngående varer (varemottak): summerer alle "inn"-bevegelser per variant,
+ * filtrerbart på lokasjon, merke, leverandør og periode. Svarer på "hva og hvor
+ * mye har vi tatt inn på lager", med kostverdi der den er registrert. */
+export async function beregnRapportInngaende(
+  filter: {
+    bedriftId: string;
+    lokasjonId?: string;
+    merkeId?: string;
+    leverandorId?: string;
+  } & Periode,
+) {
+  const bevegelser = await prisma.bevegelse.findMany({
+    where: {
+      bedriftId: filter.bedriftId,
+      type: "inn",
+      ...(filter.lokasjonId ? { lokasjonId: filter.lokasjonId } : {}),
+      ...(filter.merkeId || filter.leverandorId
+        ? {
+            variant: {
+              ...(filter.merkeId ? { merkeId: filter.merkeId } : {}),
+              ...(filter.leverandorId ? { vare: { leverandorId: filter.leverandorId } } : {}),
+            },
+          }
+        : {}),
+      ...periodeWhere(filter),
+    },
+    select: { variantId: true, antall: true, verdiOre: true, tidspunkt: true },
+  });
+
+  interface Rad {
+    variantId: string;
+    antall: number;
+    verdiOre: number;
+    antallMedVerdi: number;
+    sisteInn: Date | null;
+  }
+  const totals = new Map<string, Rad>();
+  for (const b of bevegelser) {
+    const rad = totals.get(b.variantId) ?? {
+      variantId: b.variantId,
+      antall: 0,
+      verdiOre: 0,
+      antallMedVerdi: 0,
+      sisteInn: null,
+    };
+    rad.antall += b.antall;
+    if (b.verdiOre !== null) {
+      rad.verdiOre += b.verdiOre * b.antall;
+      rad.antallMedVerdi += b.antall;
+    }
+    if (!rad.sisteInn || b.tidspunkt > rad.sisteInn) rad.sisteInn = b.tidspunkt;
+    totals.set(b.variantId, rad);
+  }
+  return Array.from(totals.values()).sort((a, b) => b.antall - a.antall);
+}
+
 export async function beregnRapportPeriode(
   filter: { bedriftId: string; variantId?: string; lokasjonId?: string; kontekstId?: string } & Periode,
 ) {

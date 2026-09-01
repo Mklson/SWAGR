@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { prisma } from "../db/client.js";
-import { leverandorCreateSchema } from "../schemas/index.js";
+import { leverandorCreateSchema, leverandorUpdateSchema } from "../schemas/index.js";
 import { registerSimpleCrudRoutes } from "./simpleCrud.js";
 
 export function leverandorerRoutes(app: FastifyInstance) {
@@ -10,5 +10,7 @@ export function leverandorerRoutes(app: FastifyInstance) {
     prisma.leverandor,
     leverandorCreateSchema,
     "Leverandører",
+    leverandorUpdateSchema,
+    async (id) => (await prisma.vare.count({ where: { leverandorId: id } })) > 0,
   );
 }
