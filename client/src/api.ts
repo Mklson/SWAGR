@@ -147,6 +147,7 @@ export const oppdaterVare = (
   id: string,
   data: Partial<{ navn: string; kategori: string; leverandorId: string }>,
 ) => patch<Vare>(`/api/varer/${id}`, data);
+export const slettVare = (id: string) => del(`/api/varer/${id}`);
 
 export const listVarianter = () => list<Variant>("/api/varianter");
 export const opprettVariant = (data: {
@@ -161,6 +162,7 @@ export const oppdaterVariant = (
   id: string,
   data: Partial<{ bildeurl: string | null; merkeId: string | null; verdiOre: number | null }>,
 ) => patch<Variant>(`/api/varianter/${id}`, data);
+export const slettVariant = (id: string) => del(`/api/varianter/${id}`);
 
 export const listMerker = () => list<Merke>("/api/merker");
 export const opprettMerke = (data: { navn: string; logoUrl?: string }) =>

@@ -22,6 +22,8 @@ import {
   opprettMerke,
   opprettVare,
   opprettVariant,
+  slettVare,
+  slettVariant,
 } from "../api";
 import { krTilOre, oreTilKrTekst } from "../lib/valuta";
 import type {
@@ -625,6 +627,10 @@ function RedigerArtikkelSkjema({
           leverandorer={leverandorer}
           merkeAlternativer={merkeAlternativer}
           onLagret={onLagret}
+          onSlettet={async () => {
+            setValgtVareId(null);
+            await onLagret();
+          }}
         />
       )}
     </View>
@@ -637,12 +643,14 @@ function ArtikkelRedigering({
   leverandorer,
   merkeAlternativer,
   onLagret,
+  onSlettet,
 }: {
   vare: Vare;
   varianter: Variant[];
   leverandorer: Leverandor[];
   merkeAlternativer: MerkeAlternativ[];
   onLagret: () => Promise<void>;
+  onSlettet: () => Promise<void>;
 }) {
   const [navn, setNavn] = useState(vare.navn);
   const [kategori, setKategori] = useState<string | null>(vare.kategori);
@@ -650,7 +658,19 @@ function ArtikkelRedigering({
   const [feil, setFeil] = useState<string | null>(null);
   const [suksess, setSuksess] = useState<string | null>(null);
   const [laster, setLaster] = useState(false);
-  const [leggerTil, setLeggerTil] = useState(false);
+  const [bekreftSlett, setBekreftSlett] = useState(false);
+
+  async function slettArtikkel() {
+    setFeil(null);
+    setLaster(true);
+    try {
+      await slettVare(vare.id);
+      await onSlettet();
+    } catch (err) {
+      setFeil(err instanceof ApiFeil ? err.message : "Kunne ikke slette artikkelen.");
+      setLaster(false);
+    }
+  }
 
   const leverandorAlternativer = useMemo(
     () => leverandorer.map((l) => ({ verdi: l.id, label: l.navn })),
@@ -707,27 +727,31 @@ function ArtikkelRedigering({
         <VariantRedigering
           key={v.id}
           variant={v}
+          kanSlettes={varianter.length > 1}
           merkeAlternativer={merkeAlternativer}
           onLagret={onLagret}
         />
       ))}
 
-      {leggerTil ? (
-        <NyVariantMini
-          vareId={vare.id}
-          artikkelnavn={vare.navn}
-          merkeAlternativer={merkeAlternativer}
-          onFerdig={async () => {
-            setLeggerTil(false);
-            await onLagret();
-          }}
-          onAvbryt={() => setLeggerTil(false)}
-        />
+      <Text style={stiler.hjelpetekst}>
+        Nye varianter opprettes ikke her — lag en ny artikkel, eller rediger/slett en eksisterende.
+      </Text>
+
+      {bekreftSlett ? (
+        <View style={stiler.knappRad}>
+          <View style={stiler.knappRadCelle}>
+            <Knapp tittel="Avbryt" onPress={() => setBekreftSlett(false)} variant="sekundaer" disabled={laster} />
+          </View>
+          <View style={stiler.knappRadCelle}>
+            <Knapp tittel="Bekreft: slett artikkel" onPress={slettArtikkel} disabled={laster} />
+          </View>
+        </View>
       ) : (
         <Knapp
-          tittel="+ Legg til variant (størrelse/farge)"
-          onPress={() => setLeggerTil(true)}
+          tittel="Slett hele artikkelen"
+          onPress={() => setBekreftSlett(true)}
           variant="sekundaer"
+          disabled={laster}
         />
       )}
     </View>
@@ -736,10 +760,12 @@ function ArtikkelRedigering({
 
 function VariantRedigering({
   variant,
+  kanSlettes,
   merkeAlternativer,
   onLagret,
 }: {
   variant: Variant;
+  kanSlettes: boolean;
   merkeAlternativer: MerkeAlternativ[];
   onLagret: () => Promise<void>;
 }) {
@@ -750,6 +776,19 @@ function VariantRedigering({
   const [feil, setFeil] = useState<string | null>(null);
   const [suksess, setSuksess] = useState<string | null>(null);
   const [laster, setLaster] = useState(false);
+  const [bekreftSlett, setBekreftSlett] = useState(false);
+
+  async function slett() {
+    setFeil(null);
+    setLaster(true);
+    try {
+      await slettVariant(variant.id);
+      await onLagret();
+    } catch (err) {
+      setFeil(err instanceof ApiFeil ? err.message : "Kunne ikke slette varianten.");
+      setLaster(false);
+    }
+  }
 
   async function bildeValgt(bilde: KomprimertBilde) {
     setBildeLaster(true);
@@ -805,102 +844,32 @@ function VariantRedigering({
         <BildeVelger laster={bildeLaster} onValgt={bildeValgt} onFeil={setFeil} />
         {feil && <FeilBanner tekst={feil} />}
         {suksess && <Text style={stiler.suksessTekst}>{suksess}</Text>}
-        <Knapp tittel="Lagre variant" onPress={lagre} disabled={laster} variant="sekundaer" />
-      </View>
-    </Kort>
-  );
-}
-
-function NyVariantMini({
-  vareId,
-  artikkelnavn,
-  merkeAlternativer,
-  onFerdig,
-  onAvbryt,
-}: {
-  vareId: string;
-  artikkelnavn: string;
-  merkeAlternativer: MerkeAlternativ[];
-  onFerdig: () => Promise<void>;
-  onAvbryt: () => void;
-}) {
-  const [sku, setSku] = useState(`${lagSkuBase(artikkelnavn)}-${tilfeldigSuffiks()}`);
-  const [pris, setPris] = useState("");
-  const [merkeId, setMerkeId] = useState<string | null>(null);
-  const [bildeurl, setBildeurl] = useState("");
-  const [bildeLaster, setBildeLaster] = useState(false);
-  const [feil, setFeil] = useState<string | null>(null);
-  const [laster, setLaster] = useState(false);
-
-  async function bildeValgt(bilde: KomprimertBilde) {
-    setBildeLaster(true);
-    try {
-      const { url } = await lastOppBilde(bilde.base64);
-      setBildeurl(url);
-    } catch (err) {
-      setFeil(err instanceof Error ? `Bildet feilet: ${err.message}` : "Opplasting feilet.");
-    } finally {
-      setBildeLaster(false);
-    }
-  }
-
-  async function opprett() {
-    setFeil(null);
-    if (!sku.trim()) {
-      setFeil("SKU kan ikke være tom.");
-      return;
-    }
-    const verdiOre = pris.trim() ? krTilOre(pris) : null;
-    if (pris.trim() && verdiOre === null) {
-      setFeil("Pris må være et gyldig beløp.");
-      return;
-    }
-    setLaster(true);
-    try {
-      await opprettVariant({
-        vareId,
-        sku: sku.trim(),
-        ...(merkeId ? { merkeId } : {}),
-        ...(verdiOre !== null ? { verdiOre } : {}),
-        ...(bildeurl ? { bildeurl } : {}),
-      });
-      await onFerdig();
-    } catch (err) {
-      setFeil(err instanceof ApiFeil ? err.message : "Kunne ikke opprette varianten.");
-    } finally {
-      setLaster(false);
-    }
-  }
-
-  return (
-    <Kort>
-      <View style={{ gap: 10 }}>
-        <Text style={stiler.radTittel}>Ny variant</Text>
-        <TekstFelt label="SKU" value={sku} onChangeText={setSku} />
-        <TekstFelt
-          label="Pris per enhet, kr (valgfritt)"
-          value={pris}
-          onChangeText={setPris}
-          keyboardType="numeric"
-        />
-        <VelgFelt
-          label="Merke (valgfritt)"
-          valgt={merkeId}
-          alternativer={merkeAlternativer}
-          onVelg={setMerkeId}
-          tomtekst="Ingen merke"
-        />
-        <BildeVelger laster={bildeLaster} onValgt={bildeValgt} onFeil={setFeil} />
-        {bildeurl ? <Miniatyr url={bildeurl} storrelse={48} /> : null}
-        {feil && <FeilBanner tekst={feil} />}
-        <View style={stiler.knappRad}>
-          <View style={stiler.knappRadCelle}>
-            <Knapp tittel="Avbryt" onPress={onAvbryt} variant="sekundaer" disabled={laster} />
+        {bekreftSlett ? (
+          <View style={stiler.knappRad}>
+            <View style={stiler.knappRadCelle}>
+              <Knapp tittel="Avbryt" onPress={() => setBekreftSlett(false)} variant="sekundaer" disabled={laster} />
+            </View>
+            <View style={stiler.knappRadCelle}>
+              <Knapp tittel="Bekreft sletting" onPress={slett} disabled={laster} />
+            </View>
           </View>
-          <View style={stiler.knappRadCelle}>
-            <Knapp tittel="Legg til" onPress={opprett} disabled={laster} />
+        ) : (
+          <View style={stiler.knappRad}>
+            <View style={stiler.knappRadCelle}>
+              <Knapp tittel="Lagre variant" onPress={lagre} disabled={laster} variant="sekundaer" />
+            </View>
+            {kanSlettes ? (
+              <View style={stiler.knappRadCelle}>
+                <Knapp
+                  tittel="Slett variant"
+                  onPress={() => setBekreftSlett(true)}
+                  disabled={laster}
+                  variant="sekundaer"
+                />
+              </View>
+            ) : null}
           </View>
-        </View>
+        )}
       </View>
     </Kort>
   );
