@@ -77,7 +77,7 @@ export function VarerScreen() {
   const [brukere, setBrukere] = useState<Bruker[]>([]);
   const [innBevegelser, setInnBevegelser] = useState<Bevegelse[]>([]);
   const [listeFeil, setListeFeil] = useState<string | null>(null);
-  const [apen, setApen] = useState<"varemottak" | "ny" | "rediger" | null>("ny");
+  const [apen, setApen] = useState<"varemottak" | "ny" | "rediger" | null>(null);
 
   const lastInn = useCallback(async () => {
     try {
