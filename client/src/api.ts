@@ -13,6 +13,7 @@ import type {
   Leverandor,
   Lokasjon,
   Merke,
+  RapportDetaljertRad,
   RapportFleksibelRad,
   RapportInngaendeRad,
   RapportKontekstRad,
@@ -266,3 +267,13 @@ export const hentRapportInngaende = (query: {
   fra?: string;
   til?: string;
 }) => list<RapportInngaendeRad>(`/api/rapporter/inngaende${byggSpørrestreng(query)}`);
+
+// kontekstId/vareId/type kan være komma-separerte lister.
+export const hentRapportDetaljert = (query: {
+  kontekstId?: string;
+  vareId?: string;
+  type?: string;
+  lokasjonId?: string;
+  fra?: string;
+  til?: string;
+}) => list<RapportDetaljertRad>(`/api/rapporter/detaljert${byggSpørrestreng(query)}`);

@@ -156,3 +156,21 @@ export interface RapportInngaendeRad {
   antallMedVerdi: number;
   sisteInn: string | null;
 }
+
+export interface RapportDetaljertRad {
+  id: string;
+  tidspunkt: string;
+  type: BevegelseType;
+  antall: number;
+  verdiOre: number | null;
+  linjeVerdiOre: number | null;
+  artikkel: string;
+  kategori: string;
+  sku: string;
+  merke: string | null;
+  lokasjon: string;
+  kunde: string | null;
+  kundeFirma: string | null;
+  formaal: string | null;
+  bruker: string;
+}

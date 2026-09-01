@@ -1,3 +1,4 @@
+import type { BevegelseType } from "@prisma/client";
 import { prisma } from "../db/client.js";
 import { BEVEGELSE_FORTEGN } from "./bevegelseFortegn.js";
 
@@ -242,6 +243,68 @@ export async function beregnRapportInngaende(
     totals.set(b.variantId, rad);
   }
   return Array.from(totals.values()).sort((a, b) => b.antall - a.antall);
+}
+
+/** Egendefinert, linjenivå-rapport: bruker velger fritt ett eller flere av
+ * kunder, artikler (vare), bevegelsestyper, lokasjon og periode. Returnerer
+ * én rad per bevegelse med alle felt ferdig utpakket - klienten skriver dem
+ * rett til hver sin CSV-kolonne. */
+export async function beregnRapportDetaljert(
+  filter: {
+    bedriftId: string;
+    kontekstIds?: string[];
+    vareIds?: string[];
+    typer?: BevegelseType[];
+    lokasjonId?: string;
+  } & Periode,
+) {
+  const bevegelser = await prisma.bevegelse.findMany({
+    where: {
+      bedriftId: filter.bedriftId,
+      ...(filter.kontekstIds?.length ? { kontekstId: { in: filter.kontekstIds } } : {}),
+      ...(filter.typer?.length ? { type: { in: filter.typer } } : {}),
+      ...(filter.lokasjonId ? { lokasjonId: filter.lokasjonId } : {}),
+      ...(filter.vareIds?.length ? { variant: { vareId: { in: filter.vareIds } } } : {}),
+      ...periodeWhere(filter),
+    },
+    orderBy: { tidspunkt: "desc" },
+    select: {
+      id: true,
+      tidspunkt: true,
+      type: true,
+      antall: true,
+      verdiOre: true,
+      variant: {
+        select: {
+          sku: true,
+          vare: { select: { navn: true, kategori: true } },
+          merke: { select: { navn: true } },
+        },
+      },
+      lokasjon: { select: { navn: true } },
+      kontekst: { select: { navn: true, firma: true } },
+      formaal: { select: { navn: true } },
+      bruker: { select: { navn: true } },
+    },
+  });
+
+  return bevegelser.map((b) => ({
+    id: b.id,
+    tidspunkt: b.tidspunkt,
+    type: b.type,
+    antall: b.antall,
+    verdiOre: b.verdiOre,
+    linjeVerdiOre: b.verdiOre != null ? b.verdiOre * b.antall : null,
+    artikkel: b.variant.vare.navn,
+    kategori: b.variant.vare.kategori,
+    sku: b.variant.sku,
+    merke: b.variant.merke?.navn ?? null,
+    lokasjon: b.lokasjon.navn,
+    kunde: b.kontekst?.navn ?? null,
+    kundeFirma: b.kontekst?.firma ?? null,
+    formaal: b.formaal?.navn ?? null,
+    bruker: b.bruker.navn,
+  }));
 }
 
 export async function beregnRapportPeriode(

@@ -224,4 +224,87 @@ describe("oppsett CRUD (rediger/slett)", () => {
     expect(rader[0].antall).toBe(10);
     expect(rader[0].verdiOre).toBe(50000);
   });
+
+  it("egendefinert rapport filtrerer på kunde + type og gir én rad per bevegelse", async () => {
+    const lev = (
+      await app.inject({ method: "POST", url: "/api/leverandorer", payload: { navn: "L" } })
+    ).json();
+    const vare = (
+      await app.inject({
+        method: "POST",
+        url: "/api/varer",
+        payload: { navn: "Vinglass", kategori: "Glass", leverandorId: lev.id },
+      })
+    ).json();
+    const variant = (
+      await app.inject({
+        method: "POST",
+        url: "/api/varianter",
+        payload: { vareId: vare.id, sku: "VG-1", verdiOre: 2500 },
+      })
+    ).json();
+    const lokasjon = (
+      await app.inject({
+        method: "POST",
+        url: "/api/lokasjoner",
+        payload: { navn: "Lager", type: "lager" },
+      })
+    ).json();
+    const bruker = (
+      await app.inject({
+        method: "POST",
+        url: "/api/brukere",
+        payload: { navn: "Ola", rolle: "ansatt" },
+      })
+    ).json();
+    const kundeA = (
+      await app.inject({
+        method: "POST",
+        url: "/api/kontekster",
+        payload: { type: "kunde", navn: "Kunde A", firma: "Kunde A AS" },
+      })
+    ).json();
+    const kundeB = (
+      await app.inject({
+        method: "POST",
+        url: "/api/kontekster",
+        payload: { type: "kunde", navn: "Kunde B" },
+      })
+    ).json();
+
+    const ut = (variantId: string, kontekstId: string, antall: number) =>
+      app.inject({
+        method: "POST",
+        url: "/api/bevegelser",
+        payload: { variantId, lokasjonId: lokasjon.id, kontekstId, brukerId: bruker.id, type: "ut", antall },
+      });
+    await ut(variant.id, kundeA.id, 3);
+    await ut(variant.id, kundeA.id, 2);
+    await ut(variant.id, kundeB.id, 9);
+    // En inn-bevegelse skal ikke bli med når type=ut.
+    await app.inject({
+      method: "POST",
+      url: "/api/bevegelser",
+      payload: { variantId: variant.id, lokasjonId: lokasjon.id, brukerId: bruker.id, type: "inn", antall: 100 },
+    });
+
+    const res = await app.inject({
+      method: "GET",
+      url: `/api/rapporter/detaljert?kontekstId=${kundeA.id}&type=ut`,
+    });
+    expect(res.statusCode).toBe(200);
+    const rader = res.json();
+    expect(rader).toHaveLength(2);
+    expect(rader.every((r: { kunde: string }) => r.kunde === "Kunde A")).toBe(true);
+    expect(rader[0].kundeFirma).toBe("Kunde A AS");
+    expect(rader[0].artikkel).toBe("Vinglass");
+    expect(rader[0].linjeVerdiOre).toBe(rader[0].antall * 2500);
+
+    // Flere kunder via komma-liste.
+    const beggeKunder = await app.inject({
+      method: "GET",
+      url: `/api/rapporter/detaljert?kontekstId=${kundeA.id},${kundeB.id}&type=ut`,
+    });
+    expect(beggeKunder.json()).toHaveLength(3);
+  });
 });

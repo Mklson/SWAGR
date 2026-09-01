@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ScrollView, StyleSheet, Text, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import {
   ApiFeil,
+  hentRapportDetaljert,
   hentRapportFleksibel,
   hentRapportInngaende,
   hentRapportKontekst,
@@ -18,10 +19,12 @@ import { eksporterCsv } from "../lib/csvEksport";
 import { formatterKroner, oreTilKrTekst } from "../lib/valuta";
 import type {
   Bevegelse,
+  BevegelseType,
   Kontekst,
   Leverandor,
   Lokasjon,
   Merke,
+  RapportDetaljertRad,
   RapportFleksibelRad,
   RapportInngaendeRad,
   RapportKontekstRad,
@@ -46,12 +49,21 @@ function dagensDato(): string {
 
 // Rapportene er foldet sammen når man kommer inn; hver åpnes uavhengig.
 const RAPPORTER = [
+  { nokkel: "detaljert", tittel: "Egendefinert rapport (velg selv)" },
   { nokkel: "fleksibel", tittel: "Fleksibel rapport: merke og/eller kunde" },
   { nokkel: "inngaende", tittel: "Inngående varer (varemottak)" },
   { nokkel: "periode", tittel: "Totalt per bevegelsestype" },
   { nokkel: "kontekst", tittel: "Totalt per variant for én kunde" },
   { nokkel: "historikk", tittel: "Full historikk for en kunde" },
 ] as const;
+
+const DETALJERT_TYPER: { verdi: BevegelseType; label: string }[] = [
+  { verdi: "ut", label: "Ta ut" },
+  { verdi: "retur", label: "Retur" },
+  { verdi: "inn", label: "Inn" },
+  { verdi: "svinn", label: "Svinn" },
+  { verdi: "internbruk", label: "Internbruk" },
+];
 
 export function RapporterScreen() {
   const [varer, setVarer] = useState<Vare[]>([]);
@@ -101,6 +113,10 @@ export function RapporterScreen() {
     [kontekster],
   );
   const merkeAlternativer = useMemo(() => merker.map((m) => ({ verdi: m.id, label: m.navn })), [merker]);
+  const vareAlternativer = useMemo(
+    () => varer.map((v) => ({ verdi: v.id, label: v.navn, undertekst: v.kategori })),
+    [varer],
+  );
   const leverandorAlternativer = useMemo(
     () => leverandorer.map((l) => ({ verdi: l.id, label: l.navn })),
     [leverandorer],
@@ -115,6 +131,13 @@ export function RapporterScreen() {
   }
 
   const seksjoner: Record<string, React.ReactNode> = {
+    detaljert: (
+      <DetaljertRapport
+        kontekstAlternativer={kontekstAlternativer}
+        vareAlternativer={vareAlternativer}
+        lokasjonAlternativer={lokasjonAlternativer}
+      />
+    ),
     fleksibel: (
       <FleksibelRapport
         merkeAlternativer={merkeAlternativer}
@@ -165,6 +188,235 @@ export function RapporterScreen() {
         </Sammenleggbar>
       ))}
     </ScrollView>
+  );
+}
+
+type Alternativ = { verdi: string; label: string; undertekst?: string };
+
+/** Multivalg via samme nedtrekk som VelgFelt: velg ett om gangen, valgte vises
+ * som fjernbare chips under. Tom liste = "alle". */
+function FlerVelg({
+  label,
+  valgte,
+  alternativer,
+  onEndre,
+  tomtekst,
+}: {
+  label: string;
+  valgte: string[];
+  alternativer: Alternativ[];
+  onEndre: (v: string[]) => void;
+  tomtekst: string;
+}) {
+  const ledige = alternativer.filter((a) => !valgte.includes(a.verdi));
+  return (
+    <View style={{ gap: 6 }}>
+      <VelgFelt
+        label={label}
+        valgt={null}
+        alternativer={ledige}
+        onVelg={(v) => onEndre([...valgte, v])}
+        tomtekst={valgte.length ? `${valgte.length} valgt — legg til flere` : tomtekst}
+      />
+      {valgte.length > 0 && (
+        <View style={stiler.chipRad}>
+          {valgte.map((id) => {
+            const a = alternativer.find((x) => x.verdi === id);
+            return (
+              <Pressable key={id} style={stiler.chip} onPress={() => onEndre(valgte.filter((x) => x !== id))}>
+                <Text style={stiler.chipTekst}>{a?.label ?? id} ✕</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      )}
+    </View>
+  );
+}
+
+function DetaljertRapport({
+  kontekstAlternativer,
+  vareAlternativer,
+  lokasjonAlternativer,
+}: {
+  kontekstAlternativer: Alternativ[];
+  vareAlternativer: Alternativ[];
+  lokasjonAlternativer: { verdi: string; label: string }[];
+}) {
+  const [kunder, setKunder] = useState<string[]>([]);
+  const [artikler, setArtikler] = useState<string[]>([]);
+  const [typer, setTyper] = useState<BevegelseType[]>(["ut"]);
+  const [lokasjonId, setLokasjonId] = useState<string | null>(null);
+  const [fra, setFra] = useState("");
+  const [til, setTil] = useState("");
+  const [rader, setRader] = useState<RapportDetaljertRad[] | null>(null);
+  const [feil, setFeil] = useState<string | null>(null);
+  const [laster, setLaster] = useState(false);
+
+  function toggleType(t: BevegelseType) {
+    setTyper((forrige) => (forrige.includes(t) ? forrige.filter((x) => x !== t) : [...forrige, t]));
+  }
+
+  async function hent() {
+    setFeil(null);
+    setLaster(true);
+    try {
+      const res = await hentRapportDetaljert({
+        kontekstId: kunder.join(",") || undefined,
+        vareId: artikler.join(",") || undefined,
+        type: typer.join(",") || undefined,
+        lokasjonId: lokasjonId ?? undefined,
+        fra: fra.trim() || undefined,
+        til: til.trim() || undefined,
+      });
+      setRader(res);
+    } catch (err) {
+      setFeil(err instanceof ApiFeil ? err.message : "Kunne ikke hente rapport.");
+    } finally {
+      setLaster(false);
+    }
+  }
+
+  function eksporter() {
+    if (!rader) return;
+    eksporterCsv(
+      `rapport-egendefinert-${dagensDato()}`,
+      [
+        "Dato",
+        "Type",
+        "Kunde",
+        "Bedrift",
+        "Artikkel",
+        "Kategori",
+        "SKU",
+        "Merke",
+        "Lokasjon",
+        "Bruker",
+        "Formål",
+        "Antall",
+        "Verdi pr stk (kr)",
+        "Verdi linje (kr)",
+      ],
+      rader.map((r) => [
+        new Date(r.tidspunkt).toLocaleString("nb-NO"),
+        r.type,
+        r.kunde ?? "",
+        r.kundeFirma ?? "",
+        r.artikkel,
+        r.kategori,
+        r.sku,
+        r.merke ?? "",
+        r.lokasjon,
+        r.bruker,
+        r.formaal ?? "",
+        r.antall,
+        r.verdiOre != null ? oreTilKrTekst(r.verdiOre) : "",
+        r.linjeVerdiOre != null ? oreTilKrTekst(r.linjeVerdiOre) : "",
+      ]),
+    );
+  }
+
+  const totalAntall = (rader ?? []).reduce((s, r) => s + r.antall, 0);
+  const totalVerdi = (rader ?? []).reduce((s, r) => s + (r.linjeVerdiOre ?? 0), 0);
+
+  return (
+    <>
+      <Text style={stiler.hjelpetekst}>
+        Sett sammen din egen rapport: én eller flere kunder, én eller flere artikler, hvilke
+        bevegelsestyper og fritt tidsrom. Hver linje blir én rad i CSV-en, med hvert felt i egen
+        kolonne. Tomt kunde-/artikkelvalg = alle.
+      </Text>
+
+      <FlerVelg
+        label="Kunder"
+        valgte={kunder}
+        alternativer={kontekstAlternativer}
+        onEndre={setKunder}
+        tomtekst="Alle kunder"
+      />
+      <FlerVelg
+        label="Artikler"
+        valgte={artikler}
+        alternativer={vareAlternativer}
+        onEndre={setArtikler}
+        tomtekst="Alle artikler"
+      />
+
+      <View style={{ gap: 6 }}>
+        <Text style={stiler.feltEtikett}>Bevegelsestyper</Text>
+        <View style={stiler.chipRad}>
+          {DETALJERT_TYPER.map((t) => {
+            const på = typer.includes(t.verdi);
+            return (
+              <Pressable
+                key={t.verdi}
+                onPress={() => toggleType(t.verdi)}
+                style={[stiler.typeChip, på && stiler.typeChipPå]}
+              >
+                <Text style={[stiler.typeChipTekst, på && stiler.typeChipTekstPå]}>{t.label}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+        <Text style={stiler.hjelpetekst}>Ingen valgt = alle typer.</Text>
+      </View>
+
+      <VelgFelt
+        label="Lokasjon (valgfritt)"
+        valgt={lokasjonId}
+        alternativer={lokasjonAlternativer}
+        onVelg={setLokasjonId}
+        tomtekst="Alle lokasjoner"
+      />
+      <Periodevelger fra={fra} til={til} onFraChange={setFra} onTilChange={setTil} />
+
+      {feil && <FeilBanner tekst={feil} />}
+      <Knapp tittel="Hent rapport" onPress={hent} disabled={laster} variant="sekundaer" />
+
+      {rader !== null && (
+        <View style={stiler.resultatListe}>
+          {rader.length === 0 ? (
+            <TomListeTekst tekst="Ingen bevegelser matcher valgene." />
+          ) : (
+            <>
+              <Kort>
+                <Text style={stiler.totalTittel}>{rader.length} linjer</Text>
+                <Text style={stiler.totalVerdi}>{formatterKroner(totalVerdi)}</Text>
+                <Text style={stiler.hjelpetekst}>{totalAntall} stk totalt</Text>
+              </Kort>
+              <Knapp tittel="📊 Eksporter til Excel (CSV)" onPress={eksporter} variant="sekundaer" />
+              {rader.slice(0, 100).map((r) => (
+                <Kort key={r.id}>
+                  <Text style={stiler.radTittel}>
+                    {r.artikkel} — {r.sku}
+                  </Text>
+                  <View style={stiler.resultatRad}>
+                    <Text style={stiler.resultatType}>
+                      {r.type} · {r.kunde ?? "—"}
+                      {r.merke ? ` · ${r.merke}` : ""}
+                    </Text>
+                    <Text style={stiler.resultatAntall}>{r.antall} stk</Text>
+                  </View>
+                  <View style={stiler.resultatRad}>
+                    <Text style={stiler.historikkDato}>
+                      {new Date(r.tidspunkt).toLocaleString("nb-NO")}
+                    </Text>
+                    {r.linjeVerdiOre != null && (
+                      <Text style={stiler.radVerdi}>{formatterKroner(r.linjeVerdiOre)}</Text>
+                    )}
+                  </View>
+                </Kort>
+              ))}
+              {rader.length > 100 && (
+                <Text style={stiler.hjelpetekst}>
+                  Viser 100 av {rader.length} linjer — CSV-en inneholder alle.
+                </Text>
+              )}
+            </>
+          )}
+        </View>
+      )}
+    </>
   );
 }
 
@@ -855,5 +1107,45 @@ const stiler = StyleSheet.create({
     fontSize: 12,
     color: "#999",
     marginTop: 4,
+  },
+  feltEtikett: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: farger.undertekst,
+  },
+  chipRad: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
+  },
+  chip: {
+    backgroundColor: "#eef3f0",
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  chipTekst: {
+    fontSize: 12,
+    color: farger.primaer,
+    fontWeight: "600",
+  },
+  typeChip: {
+    borderWidth: 1,
+    borderColor: farger.kant,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  typeChipPå: {
+    backgroundColor: farger.primaer,
+    borderColor: farger.primaer,
+  },
+  typeChipTekst: {
+    fontSize: 12,
+    color: "#666",
+    fontWeight: "600",
+  },
+  typeChipTekstPå: {
+    color: "#fff",
   },
 });

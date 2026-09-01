@@ -1,5 +1,7 @@
 import type { FastifyInstance } from "fastify";
+import type { BevegelseType } from "@prisma/client";
 import {
+  rapportDetaljertQuerySchema,
   rapportFleksibelQuerySchema,
   rapportInngaendeQuerySchema,
   rapportKontekstParamsSchema,
@@ -7,11 +9,24 @@ import {
   rapportPeriodeQuerySchema,
 } from "../schemas/index.js";
 import {
+  beregnRapportDetaljert,
   beregnRapportFleksibel,
   beregnRapportInngaende,
   beregnRapportKontekst,
   beregnRapportPeriode,
 } from "../lib/rapportBeregning.js";
+
+const BEVEGELSE_TYPER: BevegelseType[] = ["inn", "ut", "svinn", "retur", "internbruk"];
+const UUID_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+
+function listeParam(verdi: string | undefined, gyldig?: (s: string) => boolean): string[] | undefined {
+  if (!verdi) return undefined;
+  const deler = verdi
+    .split(",")
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0 && (!gyldig || gyldig(s)));
+  return deler.length ? deler : undefined;
+}
 
 export function rapporterRoutes(app: FastifyInstance) {
   // Summerer antall per variant+type for én kontekst (f.eks. "hvor mye har vi
@@ -72,6 +87,31 @@ export function rapporterRoutes(app: FastifyInstance) {
         return reply.status(400).send({ error: parsed.error.flatten() });
       }
       return beregnRapportInngaende({ ...parsed.data, bedriftId: request.bedriftId });
+    },
+  );
+
+  // Egendefinert rapport: fritt valg av kunder + artikler + typer + lokasjon +
+  // periode. Én rad per bevegelse, hvert felt i egen kolonne på klienten.
+  app.get(
+    "/api/rapporter/detaljert",
+    { schema: { tags: ["Rapporter"], summary: "Egendefinert linjenivå-rapport" } },
+    async (request, reply) => {
+      const parsed = rapportDetaljertQuerySchema.safeParse(request.query);
+      if (!parsed.success) {
+        return reply.status(400).send({ error: parsed.error.flatten() });
+      }
+      const typer = listeParam(parsed.data.type, (s) =>
+        (BEVEGELSE_TYPER as string[]).includes(s),
+      ) as BevegelseType[] | undefined;
+      return beregnRapportDetaljert({
+        bedriftId: request.bedriftId,
+        kontekstIds: listeParam(parsed.data.kontekstId, (s) => UUID_RE.test(s)),
+        vareIds: listeParam(parsed.data.vareId, (s) => UUID_RE.test(s)),
+        typer,
+        lokasjonId: parsed.data.lokasjonId,
+        fra: parsed.data.fra,
+        til: parsed.data.til,
+      });
     },
   );
 }

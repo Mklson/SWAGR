@@ -171,6 +171,16 @@ export const rapportPeriodeQuerySchema = z.object({
   til: z.coerce.date().optional(),
 });
 
+// Egendefinert rapport: kontekstId/vareId/type kan være komma-separerte lister.
+export const rapportDetaljertQuerySchema = z.object({
+  kontekstId: z.string().optional(),
+  vareId: z.string().optional(),
+  type: z.string().optional(),
+  lokasjonId: z.string().uuid().optional(),
+  fra: z.coerce.date().optional(),
+  til: z.coerce.date().optional(),
+});
+
 export const rapportInngaendeQuerySchema = z.object({
   lokasjonId: z.string().uuid().optional(),
   merkeId: z.string().uuid().optional(),
