@@ -31,7 +31,7 @@ import {
 } from "../api";
 import { hentLagretVerdi, lagreVerdi } from "../lib/lagring";
 import { hentLagretBruker } from "../lib/auth";
-import { åpnePlukkliste } from "../lib/plukkliste";
+import { videresendPlukkliste as videresend, åpnePlukkliste, type PlukklisteData } from "../lib/plukkliste";
 import { formatterKroner } from "../lib/valuta";
 import { KATEGORIER } from "../lib/kategorier";
 import { ALLE_KATEGORIER, MerkeOgKategoriFilter, UTEN_MERKE } from "../components/VareFilter";
@@ -295,8 +295,8 @@ export function HurtigScreen() {
     setValgtVariantId(null);
   }
 
-  function lagPlukkliste() {
-    if (!sisteOrdre) return;
+  function byggPlukklisteData(): PlukklisteData | null {
+    if (!sisteOrdre) return null;
     const kunde = sisteOrdre.kundeId
       ? kontekster.find((k) => k.id === sisteOrdre.kundeId) ?? null
       : null;
@@ -310,7 +310,7 @@ export function HurtigScreen() {
         antall: l.antall,
       };
     });
-    const ok = åpnePlukkliste({
+    return {
       tittel: sisteOrdre.type === "reserver" ? "Plukkliste (reservasjon)" : "Plukkliste",
       ordreDato: sisteOrdre.tidspunkt,
       kunde: kunde
@@ -328,9 +328,24 @@ export function HurtigScreen() {
       lokasjon: lokasjoner.find((l) => l.id === sisteOrdre.lokasjonId)?.navn ?? "?",
       registrertAv: brukere.find((b) => b.id === sisteOrdre.brukerId)?.navn ?? "?",
       linjer,
-    });
-    if (!ok) {
+    };
+  }
+
+  function lagPlukkliste() {
+    const data = byggPlukklisteData();
+    if (!data) return;
+    if (!åpnePlukkliste(data)) {
       setSisteMelding("Kunne ikke åpne plukklista — tillat sprettoppvinduer for siden og prøv igjen.");
+    }
+  }
+
+  async function videresendPlukkliste() {
+    const data = byggPlukklisteData();
+    if (!data) return;
+    const utfall = await videresend(data);
+    if (utfall === "epost") setSisteMelding("Åpner e-post med plukklista i meldingsteksten.");
+    else if (utfall === "feilet") {
+      setSisteMelding("Deling støttes ikke her — bruk «Lag plukkliste (PDF)» i stedet.");
     }
   }
 
@@ -585,10 +600,17 @@ export function HurtigScreen() {
 
       {sisteOrdre && (
         <View style={stiler.plukkRad}>
-          <Knapp tittel="📄 Lag plukkliste (PDF)" onPress={lagPlukkliste} variant="sekundaer" />
+          <View style={stiler.plukkKnapper}>
+            <View style={stiler.plukkKnappCelle}>
+              <Knapp tittel="📄 Plukkliste (PDF)" onPress={lagPlukkliste} variant="sekundaer" />
+            </View>
+            <View style={stiler.plukkKnappCelle}>
+              <Knapp tittel="📤 Videresend" onPress={videresendPlukkliste} variant="sekundaer" />
+            </View>
+          </View>
           <Text style={stiler.plukkHjelp}>
-            Åpnes som utskrift — velg «Lagre som PDF». Filen kan legges ved i Outlook eller sendes
-            som melding, fra både PC og mobil.
+            «Videresend» åpner deling/e-post med lista rett i meldingen. «PDF» åpner en
+            utskriftsvennlig versjon — velg «Lagre som PDF» og legg den ved.
           </Text>
         </View>
       )}
@@ -1215,6 +1237,13 @@ const stiler = StyleSheet.create({
     marginHorizontal: 16,
     marginBottom: 8,
     gap: 6,
+  },
+  plukkKnapper: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  plukkKnappCelle: {
+    flex: 1,
   },
   plukkHjelp: {
     fontSize: 11,

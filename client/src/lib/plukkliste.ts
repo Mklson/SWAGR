@@ -175,6 +175,73 @@ function byggHtml(data: PlukklisteData): string {
 </html>`;
 }
 
+/** Ren tekstversjon av plukklista - til deling/e-post der en PDF ikke passer. */
+export function byggPlukklisteTekst(data: PlukklisteData): string {
+  const dato = new Date(data.ordreDato);
+  const datoTekst = Number.isNaN(dato.getTime())
+    ? data.ordreDato
+    : dato.toLocaleString("nb-NO", { dateStyle: "long", timeStyle: "short" });
+
+  const rader: string[] = [data.tittel, "".padEnd(data.tittel.length, "=")];
+  rader.push(`Dato: ${datoTekst}`);
+  rader.push(`Lokasjon: ${data.lokasjon}`);
+  rader.push(`Registrert av: ${data.registrertAv}`);
+  if (data.formaal) rader.push(`Formål: ${data.formaal}`);
+
+  const k = data.kunde;
+  if (k) {
+    rader.push("", "Kunde:");
+    rader.push(`  ${k.navn}`);
+    if (k.firma && k.firma !== k.navn) rader.push(`  ${k.firma}`);
+    if (k.kontaktperson) rader.push(`  Kontakt: ${k.kontaktperson}`);
+    if (k.adresse) rader.push(`  ${k.adresse.replace(/\n/g, ", ")}`);
+    if (k.kundenr) rader.push(`  Kundenr: ${k.kundenr}`);
+    if (k.epost) rader.push(`  ${k.epost}`);
+    if (k.telefon) rader.push(`  ${k.telefon}`);
+  }
+
+  rader.push("", "Varelinjer:");
+  data.linjer.forEach((l, i) => {
+    const merke = l.merke ? ` (${l.merke})` : "";
+    rader.push(`  ${i + 1}. ${l.navn} — ${l.sku}${merke}  ×${l.antall}`);
+  });
+
+  const totalt = data.linjer.reduce((s, l) => s + l.antall, 0);
+  rader.push("", `Sum: ${data.linjer.length} varelinjer, ${totalt} stk`);
+  return rader.join("\n");
+}
+
+export type VideresendUtfall = "delt" | "epost" | "avbrutt" | "feilet";
+
+/**
+ * Videresender plukklista med ett trykk: nettleserens delingsark (Outlook,
+ * melding, m.m.) der det finnes - ellers åpnes e-post med lista i
+ * meldingsteksten (adressert til kundens e-post hvis den er registrert).
+ */
+export async function videresendPlukkliste(data: PlukklisteData): Promise<VideresendUtfall> {
+  const tekst = byggPlukklisteTekst(data);
+  const kundeNavn = data.kunde?.firma?.trim() || data.kunde?.navn?.trim();
+  const tittel = kundeNavn ? `${data.tittel} – ${kundeNavn}` : data.tittel;
+
+  const nav = typeof navigator !== "undefined" ? (navigator as Navigator) : undefined;
+  if (nav?.share) {
+    try {
+      await nav.share({ title: tittel, text: tekst });
+      return "delt";
+    } catch (err) {
+      if ((err as { name?: string })?.name === "AbortError") return "avbrutt";
+      // Faller videre til e-post.
+    }
+  }
+
+  if (typeof window !== "undefined") {
+    const til = data.kunde?.epost?.trim() ? encodeURIComponent(data.kunde.epost.trim()) : "";
+    window.location.href = `mailto:${til}?subject=${encodeURIComponent(tittel)}&body=${encodeURIComponent(tekst)}`;
+    return "epost";
+  }
+  return "feilet";
+}
+
 /**
  * Åpner plukklista i en ny fane og trigger utskriftsdialogen. Web-only;
  * på native gjør den ingenting (ingen native-print-modul i prosjektet ennå).
