@@ -303,15 +303,17 @@ function VaremottakSkjema({
       <Knapp tittel="Registrer varemottak" onPress={registrer} disabled={laster} />
 
       {innBevegelser.length > 0 && (
-        <View style={stiler.liste}>
+        <View>
           <Text style={stiler.hjelpetekst}>Siste varemottak</Text>
           {innBevegelser.map((b) => (
-            <Kort key={b.id}>
-              <Text style={stiler.radTittel}>{bevegelseNavn(b)}</Text>
-              <Text style={stiler.radUndertekst}>
+            <View key={b.id} style={stiler.mottakLinje}>
+              <Text style={stiler.mottakNavn} numberOfLines={1}>
+                {bevegelseNavn(b)}
+              </Text>
+              <Text style={stiler.mottakMeta}>
                 {b.antall} stk · {new Date(b.tidspunkt).toLocaleDateString("nb-NO")}
               </Text>
-            </Kort>
+            </View>
           ))}
         </View>
       )}
@@ -1169,6 +1171,24 @@ const stiler = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
+  },
+  mottakLinje: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8,
+    paddingVertical: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: "#f0f0f0",
+  },
+  mottakNavn: {
+    flex: 1,
+    fontSize: 13,
+    color: farger.tekst,
+  },
+  mottakMeta: {
+    fontSize: 12,
+    color: "#888",
   },
   liste: {
     gap: 8,
