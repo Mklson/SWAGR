@@ -75,7 +75,7 @@ export function OppsettScreen() {
     lastInn();
   }, [lastInn]);
 
-  const [apen, setApen] = useState<string | null>("leverandor");
+  const [apen, setApen] = useState<string | null>(null);
   const toggle = (s: string) => setApen((n) => (n === s ? null : s));
 
   return (
