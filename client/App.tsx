@@ -8,7 +8,6 @@ import { VarerScreen } from "./src/screens/VarerScreen";
 import { OppsettScreen } from "./src/screens/OppsettScreen";
 import { LoggInnScreen } from "./src/screens/LoggInnScreen";
 import { farger } from "./src/components/ui";
-import { hentLagretVerdi, lagreVerdi } from "./src/lib/lagring";
 import {
   abonner,
   erInnlogget,
@@ -20,12 +19,6 @@ import {
   settAktivBedrift,
 } from "./src/lib/auth";
 
-const MODUS_NOKKEL = "artkl_visningsmodus";
-
-// Felt = de som jobber ute med kunder, høyt tempo, få valg.
-// Kontor = rapporter/statistikk/referansedata/administrasjon.
-const FELT_FANER = new Set(["beholdning", "hurtig"]);
-
 const FANER = [
   { nokkel: "hurtig", tittel: "Uttak", ikon: "⚡", Skjerm: HurtigScreen },
   { nokkel: "beholdning", tittel: "Beholdning", ikon: "📦", Skjerm: BeholdningScreen },
@@ -33,8 +26,6 @@ const FANER = [
   { nokkel: "varer", tittel: "Artikkelstyring", ikon: "🏷️", Skjerm: VarerScreen },
   { nokkel: "oppsett", tittel: "Oppsett", ikon: "⚙️", Skjerm: OppsettScreen },
 ] as const;
-
-type Modus = "felt" | "kontor";
 
 export default function App() {
   const [innlogget, setInnlogget] = useState(erInnlogget());
@@ -58,32 +49,11 @@ export default function App() {
 }
 
 function AutentisertApp() {
-  const [modus, setModus] = useState<Modus>("kontor");
   const [aktivFane, setAktivFane] = useState<(typeof FANER)[number]["nokkel"]>("hurtig");
   const [velgerÅpen, setVelgerÅpen] = useState(false);
   const bruker = hentLagretBruker();
   const bedrifter = hentBedrifter();
   const aktivBedrift = hentAktivBedrift();
-
-  useEffect(() => {
-    const lagret = hentLagretVerdi(MODUS_NOKKEL);
-    if (lagret === "felt" || lagret === "kontor") setModus(lagret);
-  }, []);
-
-  const synligeFaner = FANER.filter((f) => (modus === "felt" ? FELT_FANER.has(f.nokkel) : true));
-
-  useEffect(() => {
-    if (!synligeFaner.some((f) => f.nokkel === aktivFane)) {
-      setAktivFane(synligeFaner[0]?.nokkel ?? "beholdning");
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [modus]);
-
-  function byttModus() {
-    const ny: Modus = modus === "felt" ? "kontor" : "felt";
-    setModus(ny);
-    lagreVerdi(MODUS_NOKKEL, ny);
-  }
 
   const AktivSkjerm = FANER.find((f) => f.nokkel === aktivFane)?.Skjerm ?? BeholdningScreen;
   const flereBedrifter = bedrifter.length > 1;
@@ -110,9 +80,6 @@ function AutentisertApp() {
       )}
 
       <View style={stiler.toppRad}>
-        <Pressable style={stiler.modusPille} onPress={byttModus}>
-          <Text style={stiler.modusTekst}>{modus === "felt" ? "🚚 Felt-modus" : "🖥️ Kontor-modus"}</Text>
-        </Pressable>
         <Pressable style={stiler.loggUtPille} onPress={loggUt}>
           <Text style={stiler.loggUtTekst}>{bruker?.navn ? `${bruker.navn} · Logg ut` : "Logg ut"}</Text>
         </Pressable>
@@ -123,7 +90,7 @@ function AutentisertApp() {
       </View>
 
       <View style={stiler.fanebar}>
-        {synligeFaner.map((fane) => {
+        {FANER.map((fane) => {
           const erAktiv = fane.nokkel === aktivFane;
           return (
             <Pressable key={fane.nokkel} style={stiler.fane} onPress={() => setAktivFane(fane.nokkel)}>
@@ -192,21 +159,10 @@ const stiler = StyleSheet.create({
   },
   toppRad: {
     flexDirection: "row",
-    justifyContent: "space-between",
+    justifyContent: "flex-end",
     alignItems: "center",
     paddingHorizontal: 12,
     paddingTop: 8,
-  },
-  modusPille: {
-    backgroundColor: "#f0f0f0",
-    borderRadius: 999,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-  },
-  modusTekst: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "#666",
   },
   loggUtPille: {
     backgroundColor: "#f0f0f0",
