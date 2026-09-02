@@ -1,5 +1,6 @@
-import { ScrollView, StyleSheet, Text, View, Pressable } from "react-native";
-import { farger, Miniatyr } from "./ui";
+import { useState } from "react";
+import { Image, ScrollView, StyleSheet, Text, View, Pressable } from "react-native";
+import { farger } from "./ui";
 import { skjulScrollbarForId } from "../lib/skjulScrollbar";
 
 export const UTEN_MERKE = "__uten_merke__";
@@ -110,15 +111,33 @@ function MerkeChip({
   // Trunkerer i JS i stedet for numberOfLines - react-native-web sin
   // numberOfLines-polyfill kolliderer med flex-krysningsaksen og gir høyde 0
   // (teksten finnes i DOM men er usynlig), en kjent RNW-kvirk.
-  const visningsnavn = navn.length > 9 ? `${navn.slice(0, 8)}…` : navn;
+  const visningsnavn = navn.length > 11 ? `${navn.slice(0, 10)}…` : navn;
   return (
     <Pressable style={stiler.merkeChip} onPress={onPress}>
-      <View style={[stiler.merkeChipRing, aktiv && stiler.merkeChipRingAktiv]}>
-        <Miniatyr url={logoUrl} bokstav={navn} storrelse={44} />
+      <View style={[stiler.merkeChipFlate, aktiv && stiler.merkeChipFlateAktiv]}>
+        <MerkeLogo logoUrl={logoUrl} navn={navn} />
       </View>
       <Text style={[stiler.merkeChipTekst, aktiv && stiler.merkeChipTekstAktiv]}>{visningsnavn}</Text>
     </Pressable>
   );
+}
+
+/** Merkelogo i en bred, rektangulær flate med «contain» - horisontale logoer
+ * vises i sin helhet i stedet for å bli midtstilt-beskåret i en liten firkant.
+ * Faller tilbake til forbokstaven når det ikke finnes logo eller den feiler. */
+function MerkeLogo({ logoUrl, navn }: { logoUrl?: string | null; navn: string }) {
+  const [feilet, setFeilet] = useState(false);
+  if (logoUrl && !feilet) {
+    return (
+      <Image
+        source={{ uri: logoUrl }}
+        style={stiler.merkeLogoBilde}
+        resizeMode="contain"
+        onError={() => setFeilet(true)}
+      />
+    );
+  }
+  return <Text style={stiler.merkeLogoBokstav}>{navn.charAt(0).toUpperCase()}</Text>;
 }
 
 function KategoriChip({ navn, aktiv, onPress }: { navn: string; aktiv: boolean; onPress: () => void }) {
@@ -133,31 +152,44 @@ const stiler = StyleSheet.create({
   merkeHylle: {
     flexGrow: 0,
     flexShrink: 0,
-    height: 80,
+    height: 84,
     marginBottom: 10,
   },
   merkeHylleInnhold: {
     paddingHorizontal: 16,
-    gap: 14,
+    gap: 12,
     flexDirection: "row",
     alignItems: "flex-start",
   },
   merkeChip: {
     alignItems: "center",
-    width: 60,
+    width: 92,
     gap: 4,
   },
-  merkeChipRing: {
-    width: 52,
+  merkeChipFlate: {
+    width: 92,
     height: 52,
-    borderRadius: 26,
+    borderRadius: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    backgroundColor: "#fafafa",
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 2,
-    borderColor: "transparent",
+    borderColor: "#eee",
+    overflow: "hidden",
   },
-  merkeChipRingAktiv: {
+  merkeChipFlateAktiv: {
     borderColor: farger.primaer,
+  },
+  merkeLogoBilde: {
+    width: "100%",
+    height: "100%",
+  },
+  merkeLogoBokstav: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: farger.primaer,
   },
   merkeChipTekst: {
     fontSize: 11,
