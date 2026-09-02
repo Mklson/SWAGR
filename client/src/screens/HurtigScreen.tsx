@@ -598,7 +598,7 @@ export function HurtigScreen() {
         </View>
       )}
 
-      {sisteOrdre && (
+      {sisteOrdre && (sisteOrdre.type === "ut" || sisteOrdre.type === "reserver") && (
         <View style={stiler.plukkRad}>
           <View style={stiler.plukkKnapper}>
             <View style={stiler.plukkKnappCelle}>
