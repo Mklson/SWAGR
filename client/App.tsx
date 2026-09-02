@@ -139,13 +139,14 @@ const stiler = StyleSheet.create({
   logoBar: {
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
     backgroundColor: "#fff",
   },
   logo: {
-    height: 48,
-    width: "70%",
-    maxWidth: 320,
+    height: 56,
+    width: "90%",
+    maxWidth: 460,
   },
   bedriftBar: {
     backgroundColor: farger.primaer,

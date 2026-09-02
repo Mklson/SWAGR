@@ -1182,12 +1182,14 @@ const stiler = StyleSheet.create({
   },
   logoForhandsvisning: {
     alignItems: "center",
-    paddingVertical: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
     backgroundColor: "#fafafa",
     borderRadius: 8,
   },
   logoBilde: {
     height: 56,
-    width: "70%",
+    width: "90%",
+    maxWidth: 460,
   },
 });
